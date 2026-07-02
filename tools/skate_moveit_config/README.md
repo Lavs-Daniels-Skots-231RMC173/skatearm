@@ -53,8 +53,11 @@ audited safety model instead of duplicating it.
   MoveIt move_group ──FollowJointTrajectory──▶ moveit_bridge ──JointState──▶ skate_driver ──UDP──▶ sim / robot
 ```
 
-On hardware, a `ros2_control` `JointTrajectoryController` + a Skate
-`SystemInterface` (C++) is the production alternative to the Python bridge; the
+The production alternative to the Python bridge now exists:
+[`skate_ros2_control`](../skate_ros2_control/) — a C++ `ros2_control`
+`SystemInterface` + per-arm `JointTrajectoryController`s under the **same
+controller names**, so this MoveIt config drives either backend unchanged
+(just don't start `moveit_bridge` on the ros2_control path). The
 FollowJointTrajectory contract above is identical either way.
 
 ## Files

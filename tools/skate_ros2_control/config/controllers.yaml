@@ -1,0 +1,48 @@
+# ros2_control controllers for the Skate arms.
+#
+# The two JTC names deliberately MATCH skate_moveit_config's
+# moveit_controllers.yaml (skate_left/right_arm_controller +
+# follow_joint_trajectory), so MoveIt drives these controllers unchanged —
+# the Python moveit_bridge simply isn't launched on this path.
+#
+# No joint_state_broadcaster: the skate_ros2 driver already publishes
+# /joint_states from robot telemetry; a broadcaster would double-publish.
+
+controller_manager:
+  ros__parameters:
+    update_rate: 100  # Hz; write() streams commands, feeding the driver's deadman
+
+    skate_left_arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+    skate_right_arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+skate_left_arm_controller:
+  ros__parameters:
+    joints:
+      - a0_armL_a8
+      - a1_armL_a9
+      - a2_armL_a10
+      - a3_armL_a11
+      - a4_armL_a12
+      - a5_armL_a13
+      - a6_armL_a14
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    constraints:
+      stopped_velocity_tolerance: 0.05
+
+skate_right_arm_controller:
+  ros__parameters:
+    joints:
+      - a0_armR_a16
+      - a1_armR_a17
+      - a2_armR_a18
+      - a3_armR_a19
+      - a4_armR_a20
+      - a5_armR_a21
+      - a6_armR_a22
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    constraints:
+      stopped_velocity_tolerance: 0.05

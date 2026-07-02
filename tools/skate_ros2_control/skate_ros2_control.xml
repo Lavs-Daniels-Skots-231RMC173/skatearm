@@ -1,0 +1,11 @@
+<library path="skate_ros2_control">
+  <class name="skate_ros2_control/SkateSystem"
+         type="skate_ros2_control::SkateSystem"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+      Skate arm joints exposed to ros2_control over the skate_ros2 driver
+      topics (/joint_states in, /skate/joint_position_cmd out), inheriting
+      the driver's deadman / e-stop / overtemp safety.
+    </description>
+  </class>
+</library>

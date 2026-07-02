@@ -207,6 +207,8 @@ On top of the wire, [`skate_moveit_config`](tools/skate_moveit_config/) adds **M
 MoveIt 2 (skate_moveit_config)  →  FollowJointTrajectory bridge  →  skate_driver  →  UDP  →  MuJoCo sim / real Skate
 ```
 
+Prefer the standard controller stack? [`skate_ros2_control`](tools/skate_ros2_control/) provides a **C++ ros2_control `SystemInterface`** plus per-arm `JointTrajectoryController`s under the same controller names — MoveIt executes through `controller_manager` with zero config changes (verified end-to-end on Jazzy, no Python bridge in the loop).
+
 The cockpit can attach to the **same** sim endpoint as a pure observer — toggle **OBSERVE** and a MoveIt execution renders live in the browser twin, with an **EXTERNAL** chip while it moves ([details](tools/skate_commander/)).
 
 Full docs + a **Windows/WSL2 setup guide** are in [`tools/skate_ros2/`](tools/skate_ros2/) and [`tools/skate_moveit_config/`](tools/skate_moveit_config/).
@@ -305,6 +307,7 @@ Tools get built because SkateArm needs them — then released standalone:
 |---|---|---|
 | [`skate_ros2`](tools/skate_ros2/) | ROS 2 bridge over Skate's native UDP + protocol-true MuJoCo sim endpoint | ✅ **shipped** (sim-verified) |
 | [`skate_moveit_config`](tools/skate_moveit_config/) | MoveIt 2 config for the bimanual chains — SRDF generated from the URDF, OMPL planning, and a FollowJointTrajectory bridge to the UDP driver | ✅ **built & end-to-end-verified on ROS 2 Jazzy** (colcon + move_group + MoveItPy plans **and executes → sim moves**) |
+| [`skate_ros2_control`](tools/skate_ros2_control/) | **ros2_control** hardware interface — a C++ `SystemInterface` bridging `controller_manager` to the driver (inheriting its deadman / e-stop safety) + per-arm `JointTrajectoryController`s whose names match the MoveIt config | ✅ **verified on ROS 2 Jazzy** (JTC goal + a 15-waypoint MoveItPy plan execute **through the controllers**, no Python bridge) |
 | [`skate_commander`](tools/skate_commander/) | Web cockpit — browser digital twin with drag-IK, mirror-mode bimanual motion, RRT collision-routing, Python + teach-in programs, an application shell, live telemetry and scene/obstacle tools (full list in the [feature catalogue](#-skate-commander--web-cockpit) above) · OBSERVE mode — watch a ROS 2 / MoveIt execution live in the twin · sim-validated camera tools parked pending a real depth sensor · [live preview](https://raw.githack.com/dsl-robotics/skatearm/main/tools/skate_commander/preview.html) | ✅ **v0.8.2** (real-camera passthrough waits for hardware) |
 | Control-ready MJCF | skt_v3 with actuators, ready for control work | ✅ first version in [sim/](sim/) |
 | Teleop dataset hub | Bimanual datasets in LeRobot format | planned |

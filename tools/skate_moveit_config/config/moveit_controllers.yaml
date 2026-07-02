@@ -1,10 +1,11 @@
 # MoveIt talks to the robot through two FollowJointTrajectory controllers, one
-# per arm. Those action servers are provided by the Python bridge
-# `skate_ros2/moveit_bridge_node.py` (traj_bridge), which interpolates the
-# planned trajectory and streams it to the existing skate_driver over
-# skate/joint_position_cmd — so MoveIt inherits the driver's deadman/estop
-# safety instead of re-implementing it. (On hardware a ros2_control
-# JointTrajectoryController + a Skate SystemInterface is the production path.)
+# per arm. Those action servers are served by EITHER backend, same names:
+#   * the Python bridge `skate_ros2/moveit_bridge_node.py` (traj_bridge), or
+#   * real ros2_control JointTrajectoryControllers over the C++
+#     SystemInterface in tools/skate_ros2_control (launch its
+#     control.launch.py and skip the bridge).
+# Both stream to the existing skate_driver over skate/joint_position_cmd, so
+# MoveIt inherits the driver's deadman/estop safety either way.
 moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
 
 moveit_simple_controller_manager:

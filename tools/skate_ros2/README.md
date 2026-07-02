@@ -226,6 +226,12 @@ it to `skate/joint_position_cmd`, so MoveIt inherits the driver's
 arm-at-measured-pose / deadman / estop / overtemp safety instead of
 re-implementing it.
 
+Prefer the standard controller stack? [`skate_ros2_control`](../skate_ros2_control/)
+serves the **same** FollowJointTrajectory actions from real
+`ros2_control` `JointTrajectoryController`s over a C++ `SystemInterface`
+that still rides this driver's topics — swap backends without touching the
+MoveIt config.
+
 ```bash
 # sim endpoint on :2000, then:
 ros2 launch skate_moveit_config demo.launch.py \
