@@ -15,8 +15,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from skate_ros2 import names                    # noqa: E402
 from skate_ros2 import shared_classes_def as SCD  # noqa: E402
-from skate_ros2.protocol import (COMMAND_ID, SkateLink, pack_command,  # noqa: E402
-                                 unpack_packet)
+from skate_ros2.protocol import (COMMAND_ID, FRAG_MAGIC,  # noqa: E402
+                                 FRAG_MAX_DGRAM, Reassembler, SkateLink,
+                                 pack_command, pack_datagrams, unpack_packet)
 
 
 def make_fake_robot():
@@ -95,9 +96,95 @@ def test_heartbeat_is_official_yo():
     robot.close()
 
 
+def _big_state_est():
+    """A state_est that pickles to > FRAG_MAX_DGRAM — the packet WSL2 loopback
+    silently drops unless it is fragmented."""
+    se = SCD.state_est()
+    se.dof_pos = names.vector_to_can_dict(np.linspace(0, 1, 26))
+    se.dof_vel = names.vector_to_can_dict(np.linspace(1, 2, 26))
+    se.dof_torque = names.vector_to_can_dict(np.linspace(2, 3, 26))
+    return se
+
+
+def test_small_packet_is_single_unchanged_datagram():
+    ms = SCD.motor_state()
+    ms.motor_pos = names.vector_to_can_dict(np.zeros(26))
+    dgs = pack_datagrams(1, ms, 0)
+    assert len(dgs) == 1
+    assert dgs[0] == pickle.dumps((1, ms))            # byte-for-byte compatible
+    assert not dgs[0].startswith(FRAG_MAGIC)
+
+
+def test_large_packet_splits_into_bounded_fragments():
+    se = _big_state_est()
+    assert len(pickle.dumps((2, se))) > FRAG_MAX_DGRAM
+    dgs = pack_datagrams(2, se, 7)
+    assert len(dgs) >= 2
+    for d in dgs:
+        assert d.startswith(FRAG_MAGIC)
+        assert len(d) <= FRAG_MAX_DGRAM              # each fits under the MTU
+
+
+def test_reassembler_roundtrip():
+    dgs = pack_datagrams(2, _big_state_est(), 3)
+    r = Reassembler()
+    out = [r.feed(d) for d in dgs][-1]
+    assert out is not None
+    pkt_id, obj = unpack_packet(out)
+    assert pkt_id == 2
+    assert abs(names.can_dict_to_vector(obj.dof_pos)[25] - 1.0) < 1e-9
+
+
+def test_reassembler_handles_out_of_order_fragments():
+    dgs = pack_datagrams(2, _big_state_est(), 9)
+    assert len(dgs) >= 2
+    r = Reassembler()
+    outs = [r.feed(d) for d in reversed(dgs)]
+    assert outs[-1] is not None                       # completes regardless of order
+    assert unpack_packet(outs[-1])[0] == 2
+
+
+def test_reassembler_passes_plain_datagram_through():
+    r = Reassembler()
+    plain = pickle.dumps((3, "hi"))
+    assert r.feed(plain) == plain
+
+
+def test_reassembler_rejects_absurd_chunk_count():
+    from skate_ros2.protocol import FRAG_HEADER, FRAG_MAX_CHUNKS
+    bad = FRAG_MAGIC + FRAG_HEADER.pack(1, FRAG_MAX_CHUNKS + 1, 0) + b"x"
+    assert Reassembler().feed(bad) is None
+
+
+def test_large_state_est_survives_link_over_loopback():
+    """End-to-end: a >MTU state_est reaches SkateLink through fragmentation."""
+    robot, port = make_fake_robot()
+    link = SkateLink("127.0.0.1", port)
+    link.poll()                                       # fires the "yo" heartbeat
+    _, client_addr = robot.recvfrom(65536)
+    se = _big_state_est()
+    for d in pack_datagrams(2, se, 0):
+        robot.sendto(d, client_addr)
+    deadline = time.time() + 1.0
+    while time.time() < deadline and link.state.state_estimates is None:
+        link.poll()
+        time.sleep(0.01)
+    assert link.state.state_estimates is not None
+    assert abs(link.state.dof_pos()[25] - 1.0) < 1e-9
+    link.close()
+    robot.close()
+
+
 if __name__ == "__main__":
     for f in [test_pack_unpack_roundtrip, test_pack_command_validates_shape,
               test_command_reaches_robot_and_telemetry_comes_back,
-              test_heartbeat_is_official_yo]:
+              test_heartbeat_is_official_yo,
+              test_small_packet_is_single_unchanged_datagram,
+              test_large_packet_splits_into_bounded_fragments,
+              test_reassembler_roundtrip,
+              test_reassembler_handles_out_of_order_fragments,
+              test_reassembler_passes_plain_datagram_through,
+              test_reassembler_rejects_absurd_chunk_count,
+              test_large_state_est_survives_link_over_loopback]:
         f()
         print(f"PASS {f.__name__}")

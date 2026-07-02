@@ -352,6 +352,24 @@ def test_raw_cmd_rejects_wrong_length():
     assert node.targ is None
 
 
+def test_arms_from_motor_pos_when_state_est_missing():
+    """If the calibrated state-estimate stream never arrives (e.g. its packets
+    are dropped by a low-MTU link), the driver still arms from raw motor
+    telemetry and publishes joint states."""
+    node = make_node()
+    measured = np.linspace(-0.3, 0.4, 26)
+    ms = SCD.motor_state()
+    ms.motor_pos = names.vector_to_can_dict(measured)
+    node.link.state.update(1, ms)                 # only motor_state, no state_est
+    assert node.link.state.dof_pos() is None       # calibrated stream absent
+    assert node.link.state.motor_pos() is not None
+    node.rx_tick()
+    assert node.targ is not None
+    assert np.allclose(node.targ, measured)
+    js = node.publishers["joint_states"][-1]
+    assert np.allclose(js.position, measured)
+
+
 if __name__ == "__main__":
     for f in [test_arms_at_measured_pose_and_publishes_joint_states,
               test_deadman_follows_command_freshness,
@@ -360,6 +378,7 @@ if __name__ == "__main__":
               test_joint_cmd_by_name_merges_and_ignores_unknown,
               test_joint_cmd_ignored_before_arming,
               test_stale_cmd_vel_decays_to_zero,
-              test_raw_cmd_rejects_wrong_length]:
+              test_raw_cmd_rejects_wrong_length,
+              test_arms_from_motor_pos_when_state_est_missing]:
         f()
         print(f"PASS {f.__name__}")

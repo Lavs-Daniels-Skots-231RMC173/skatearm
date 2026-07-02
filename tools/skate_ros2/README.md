@@ -148,7 +148,7 @@ exposed as launch arguments of `skate_bridge.launch.py` too.
 
 There is no native ROS 2 on Windows — use **WSL2 Ubuntu 24.04** (= ROS 2
 **Jazzy**). This is the exact environment the MoveIt config was built and
-planning-verified on.
+end-to-end-verified on (planning **and** execution → the sim arm moves).
 
 ```powershell
 # once, in Windows PowerShell:
@@ -180,21 +180,36 @@ ros2 launch skate_moveit_config demo.launch.py \
     model_path:=/mnt/c/.../skt_v3 robot_host:=127.0.0.1
 ```
 
-> **WSL2 DDS caveat.** WSL2's default networking often breaks ROS 2
-> **cross-process discovery** — two nodes on the same host can't see each
-> other's topics/actions and `ros2 topic list` comes up empty. In-process
-> MoveItPy **planning works regardless** (verified); the multi-node
-> **execution** loop (move_group ↔ bridge ↔ driver) needs discovery. If you hit
-> it, switch to CycloneDDS with a loopback profile:
+> **WSL2 setup notes (two one-time fixes; a native ROS 2 Linux box needs
+> neither).** The full multi-node execution loop is verified on WSL2 once these
+> are in place:
 >
-> ```bash
-> sudo apt install -y ros-jazzy-rmw-cyclonedds-cpp
-> export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-> # a ~/cyclonedds.xml that pins 127.0.0.1 + unicast <Peer>s + AllowMulticast=false, then:
-> export CYCLONEDDS_URI=file://$HOME/cyclonedds.xml
-> ```
+> 1. **DDS discovery.** WSL2's default networking breaks ROS 2 cross-process
+>    discovery — two nodes can't see each other's topics/actions and
+>    `ros2 topic list` comes up empty. Fix: CycloneDDS pinned to loopback
+>    **unicast**. Install `ros-jazzy-rmw-cyclonedds-cpp`, write a
+>    `~/cyclonedds.xml` with a `127.0.0.1` interface,
+>    `<AllowMulticast>false</AllowMulticast>`,
+>    `<EnableMulticastLoopback>false</EnableMulticastLoopback>` and a
+>    `<Peer address="localhost"/>`, then:
 >
-> On a native ROS 2 Linux box none of this is needed — discovery just works.
+>    ```bash
+>    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+>    export CYCLONEDDS_URI=file://$HOME/cyclonedds.xml
+>    ```
+>    (On WSL2, `ros2 topic list` needs `--no-daemon` — the CLI daemon's
+>    XML-RPC socket hangs there; direct rclpy pub/sub is unaffected.)
+>
+> 2. **Large UDP telemetry.** WSL2 loopback silently drops any UDP datagram over
+>    ~1472 B (its `lo` reports MTU 65536, but the vNIC enforces ~1500 and
+>    fragmentation is unreliable at any MTU), so the sim's ~2 kB `state_est`
+>    packet never reached the driver and it never armed. The sim transport now
+>    fragments oversized telemetry into ≤1400 B chunks and `SkateLink`
+>    reassembles them (`protocol.pack_datagrams` / `Reassembler`); packets that
+>    already fit — including real firmware's raw pickles — go out unchanged, so
+>    the wire stays compatible. As a belt-and-braces fallback the driver also
+>    arms from raw `motor_state` when the calibrated `state_est` stream is
+>    absent.
 
 ## MoveIt 2 (bimanual planning)
 
@@ -218,17 +233,19 @@ ros2 launch skate_moveit_config demo.launch.py \
 # plan in the RViz MotionPlanning panel: move_group -> moveit_bridge -> driver -> sim
 ```
 
-> **Status — built &amp; planning-verified on ROS 2 Jazzy** (Ubuntu 24.04 / WSL2):
-> `colcon build` clean, `move_group` loads the config and **MoveItPy plans
-> collision-free bimanual trajectories** (2/2, ~13–15 waypoints). Three real
-> bugs were caught &amp; fixed during the live bring-up (URDF/SRDF robot-name
-> match, `file://` mesh URIs, Jazzy list-form planning-pipeline params). The
-> SRDF↔URDF consistency and the interpolation are also unit-tested without ROS.
-> Full trajectory execution to the sim is wired (the bridge accepts
-> FollowJointTrajectory goals); a visual end-to-end run needs a cross-process
-> DDS config on WSL2 (fine on a native ROS 2 box). On hardware, a `ros2_control`
-> `JointTrajectoryController` + a Skate `SystemInterface` is the production
-> alternative to the Python bridge.
+> **Status — built &amp; end-to-end-verified on ROS 2 Jazzy** (Ubuntu 24.04 /
+> WSL2): `colcon build` clean, `move_group` loads the config, **MoveItPy plans
+> collision-free bimanual trajectories** (~13–15 waypoints), and the **full
+> execution loop runs — MoveItPy `execute()` → `moveit_bridge` →
+> `skate/joint_position_cmd` → driver → sim, with the sim arm visibly moving to
+> the planned pose** (a shoulder joint drove 0 → ~1.14 rad, commands streamed,
+> zero driver rejects). Five real bugs were caught &amp; fixed during the live
+> bring-up (URDF/SRDF robot-name match, `file://` mesh URIs, Jazzy list-form
+> planning-pipeline params, and the WSL2 DDS + UDP-MTU fixes noted above).
+> SRDF↔URDF consistency, trajectory interpolation, the UDP
+> fragmentation/reassembly and the driver arm-fallback are all unit-tested
+> without ROS. On hardware, a `ros2_control` `JointTrajectoryController` + a
+> Skate `SystemInterface` is the production alternative to the Python bridge.
 
 ## Sim endpoint: honest approximations
 

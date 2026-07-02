@@ -201,7 +201,7 @@ A ROS 2 driver over Skate's **native UDP protocol** (documented packet layout, d
 
 ### MoveIt 2 motion planning
 
-On top of the wire, [`skate_moveit_config`](tools/skate_moveit_config/) adds **MoveIt 2** planning for the two arms — `left_arm` / `right_arm` / `both_arms` groups, an SRDF generated from the URDF, OMPL. **Built &amp; planning-verified on ROS 2 Jazzy:** `move_group` loads the config and **MoveItPy plans collision-free bimanual trajectories**. A `FollowJointTrajectory` bridge streams the plan to the driver, so MoveIt inherits the same deadman / e-stop / overtemp safety instead of re-implementing it:
+On top of the wire, [`skate_moveit_config`](tools/skate_moveit_config/) adds **MoveIt 2** planning for the two arms — `left_arm` / `right_arm` / `both_arms` groups, an SRDF generated from the URDF, OMPL. **Built &amp; end-to-end-verified on ROS 2 Jazzy:** `move_group` loads the config, **MoveItPy plans collision-free bimanual trajectories**, and the **full loop executes with the sim arm moving to the planned pose**. A `FollowJointTrajectory` bridge streams the plan to the driver, so MoveIt inherits the same deadman / e-stop / overtemp safety instead of re-implementing it:
 
 ```
 MoveIt 2 (skate_moveit_config)  →  FollowJointTrajectory bridge  →  skate_driver  →  UDP  →  MuJoCo sim / real Skate
@@ -302,7 +302,7 @@ Tools get built because SkateArm needs them — then released standalone:
 | Tool | What it is | Status |
 |---|---|---|
 | [`skate_ros2`](tools/skate_ros2/) | ROS 2 bridge over Skate's native UDP + protocol-true MuJoCo sim endpoint | ✅ **shipped** (sim-verified) |
-| [`skate_moveit_config`](tools/skate_moveit_config/) | MoveIt 2 config for the bimanual chains — SRDF generated from the URDF, OMPL planning, and a FollowJointTrajectory bridge to the UDP driver | ✅ **built & planning-verified on ROS 2 Jazzy** (colcon + move_group + MoveItPy 2/2 plans) |
+| [`skate_moveit_config`](tools/skate_moveit_config/) | MoveIt 2 config for the bimanual chains — SRDF generated from the URDF, OMPL planning, and a FollowJointTrajectory bridge to the UDP driver | ✅ **built & end-to-end-verified on ROS 2 Jazzy** (colcon + move_group + MoveItPy plans **and executes → sim moves**) |
 | [`skate_commander`](tools/skate_commander/) | Web cockpit — browser digital twin with drag-IK, mirror-mode bimanual motion, RRT collision-routing, Python + teach-in programs, an application shell, live telemetry and scene/obstacle tools (full list in the [feature catalogue](#-skate-commander--web-cockpit) above) · sim-validated camera tools parked pending a real depth sensor · [live preview](https://raw.githack.com/dsl-robotics/skatearm/main/tools/skate_commander/preview.html) | ✅ **v0.8.1** (real-camera passthrough waits for hardware) |
 | Control-ready MJCF | skt_v3 with actuators, ready for control work | ✅ first version in [sim/](sim/) |
 | Teleop dataset hub | Bimanual datasets in LeRobot format | planned |

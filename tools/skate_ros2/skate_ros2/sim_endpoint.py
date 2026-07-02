@@ -37,7 +37,7 @@ import numpy as np
 from . import names
 from . import shared_classes_def as SCD
 from .protocol import (BUFFER_SIZE, COMMAND_ID, DEFAULT_PORT, STALE_AFTER,
-                       unpack_packet)
+                       pack_datagrams, unpack_packet)
 
 
 class SkateSimEndpoint:
@@ -78,6 +78,7 @@ class SkateSimEndpoint:
         self.n_cmds = 0
         self.n_telemetry = 0
         self.decode_errors = 0
+        self._frag_id = 0             # rolling id for large-telemetry fragments
         self._stop = False
 
         # settle into the model's initial pose
@@ -148,8 +149,13 @@ class SkateSimEndpoint:
         self.temps += alpha * (target - self.temps)
 
     def _send(self, pkt_id, obj):
+        # Fragment oversized telemetry (e.g. state_est ~2 kB) so it survives
+        # NICs that drop > ~1500 B UDP datagrams (notably WSL2 loopback). Small
+        # packets go out as a single unchanged pickle datagram.
         try:
-            self.sock.sendto(pickle.dumps((pkt_id, obj)), self.client)
+            for dg in pack_datagrams(pkt_id, obj, self._frag_id):
+                self.sock.sendto(dg, self.client)
+            self._frag_id = (self._frag_id + 1) & 0xFFFFFFFF
             self.n_telemetry += 1
         except OSError:
             pass

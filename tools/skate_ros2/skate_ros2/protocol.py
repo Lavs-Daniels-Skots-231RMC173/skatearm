@@ -28,6 +28,7 @@ import io
 import os
 import pickle
 import socket
+import struct
 import sys
 import time
 
@@ -136,6 +137,81 @@ def unpack_packet(data):
     return decode_packet(data)
 
 
+# -- large-datagram fragmentation ------------------------------------------
+# Some virtual NICs (notably WSL2 loopback) silently DROP any UDP datagram whose
+# IP packet exceeds ~1500 B, and their fragmentation/reassembly is unreliable at
+# any interface MTU. A few sim telemetry objects (e.g. state_est) pickle to
+# ~2 kB, so we split oversized payloads into <= FRAG_MAX_DGRAM chunks with a tiny
+# reassembly header and stitch them back on the far side. Anything that already
+# fits (every real-firmware packet and every command) goes out unchanged, so the
+# wire stays byte-compatible with the existing stack.
+FRAG_MAGIC = b"SKF1"
+FRAG_HEADER = struct.Struct("!IHH")                     # msg_id, n_chunks, idx
+FRAG_HEADER_LEN = len(FRAG_MAGIC) + FRAG_HEADER.size    # 4 + 8 = 12
+FRAG_MAX_DGRAM = 1400                                   # keep IP packet < ~1500 B
+FRAG_CHUNK = FRAG_MAX_DGRAM - FRAG_HEADER_LEN           # payload bytes / fragment
+FRAG_MAX_CHUNKS = 64                                    # memory-DoS guard
+FRAG_TTL = 1.0                                          # s; drop stale partials
+
+
+def pack_datagrams(pkt_id, obj, msg_id):
+    """Serialize ``(pkt_id, obj)`` into a list of UDP-sized datagrams.
+
+    Returns a single unmodified ``pickle.dumps`` datagram when it already fits in
+    ``FRAG_MAX_DGRAM`` (the common case). Otherwise returns ``FRAG_MAGIC``-tagged
+    fragments that :class:`Reassembler` reunites. ``msg_id`` only needs to differ
+    between large messages concurrently in flight from one sender (a rolling
+    counter is fine); it is ignored for packets that fit in one datagram.
+    """
+    blob = pickle.dumps((pkt_id, obj))
+    if len(blob) <= FRAG_MAX_DGRAM:
+        return [blob]
+    chunks = [blob[i:i + FRAG_CHUNK] for i in range(0, len(blob), FRAG_CHUNK)]
+    n = len(chunks)
+    return [FRAG_MAGIC + FRAG_HEADER.pack(msg_id & 0xFFFFFFFF, n, i) + c
+            for i, c in enumerate(chunks)]
+
+
+class Reassembler:
+    """Reunites :func:`pack_datagrams` fragments into whole pickle blobs.
+
+    Feed every inbound datagram to :meth:`feed`; it returns the reassembled blob
+    when a fragmented message completes, the datagram unchanged when it is an
+    ordinary (unfragmented) packet, or ``None`` while a fragmented message is
+    still incomplete or malformed. Memory is bounded: chunk counts are capped and
+    half-assembled messages older than ``FRAG_TTL`` are evicted.
+    """
+
+    def __init__(self):
+        self._parts = {}   # msg_id -> {"n", "chunks": {idx: bytes}, "t"}
+
+    def feed(self, data, now=None):
+        if not data.startswith(FRAG_MAGIC):
+            return data                          # ordinary datagram — pass through
+        now = now if now is not None else time.monotonic()
+        try:
+            msg_id, n, idx = FRAG_HEADER.unpack_from(data, len(FRAG_MAGIC))
+        except struct.error:
+            return None
+        if n == 0 or n > FRAG_MAX_CHUNKS or idx >= n:
+            return None
+        slot = self._parts.get(msg_id)
+        if slot is None or slot["n"] != n:
+            slot = {"n": n, "chunks": {}, "t": now}
+            self._parts[msg_id] = slot
+        slot["chunks"][idx] = data[FRAG_HEADER_LEN:]
+        slot["t"] = now
+        self._evict(now)
+        if len(slot["chunks"]) == n:
+            del self._parts[msg_id]
+            return b"".join(slot["chunks"][i] for i in range(n))
+        return None
+
+    def _evict(self, now):
+        for k in [k for k, v in self._parts.items() if now - v["t"] > FRAG_TTL]:
+            del self._parts[k]
+
+
 class TelemetryState:
     """Latest decoded telemetry plus receive timestamps."""
 
@@ -184,6 +260,16 @@ class TelemetryState:
             return None
         return names.can_dict_to_vector(self.state_estimates.dof_torque)
 
+    def motor_pos(self):
+        """Raw motor positions as a flat 26-list (None if not seen).
+
+        A fallback pose source when the calibrated ``state_est`` stream has not
+        arrived yet; on the sim the two are identical.
+        """
+        if self.motor_states is None:
+            return None
+        return names.can_dict_to_vector(self.motor_states.motor_pos)
+
     def motor_temps(self):
         if self.motor_states is None:
             return None
@@ -207,6 +293,7 @@ class SkateLink:
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._sock.setblocking(False)
         self.decode_errors = 0
+        self._reasm = Reassembler()
 
     # -- connection -------------------------------------------------------
     def resolve(self):
@@ -248,8 +335,11 @@ class SkateLink:
                 break
             except OSError:
                 break
+            blob = self._reasm.feed(data)
+            if blob is None:
+                continue                     # partial fragment — wait for the rest
             try:
-                pkt_id, obj = unpack_packet(data)
+                pkt_id, obj = unpack_packet(blob)
             except Exception:
                 self.decode_errors += 1
                 continue

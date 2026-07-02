@@ -7,20 +7,24 @@ re-point the same stack at the real robot when it arrives.
 
 Part of the [SkateArm](../../README.md) project.
 
-> **Status — built &amp; planning-verified on ROS 2 Jazzy** (Ubuntu 24.04 / WSL2):
+> **Status — built &amp; end-to-end-verified on ROS 2 Jazzy** (Ubuntu 24.04 / WSL2):
 > `colcon build` is clean, `move_group` loads this config (URDF `r04` + this
-> SRDF + OMPL) and reports *"You can start planning now!"*, and **MoveItPy
-> plans collision-free bimanual trajectories** for `left_arm` and `right_arm`
-> (both succeed, ~13–15 waypoints, with the SRDF collision matrix active).
-> Three real issues were caught &amp; fixed during the live bring-up: the SRDF
-> `<robot>` name must match the URDF (`r04`); the URDF's scheme-less mesh paths
-> need `file://` URIs; and the Jazzy planning-pipeline params are **lists**
-> (`planning_plugins`, request/response adapters). The SRDF↔URDF consistency
-> and the trajectory interpolation are also unit-tested without ROS.
-> Full trajectory **execution** to the sim is wired (the bridge accepts
-> FollowJointTrajectory goals, dispatched by MoveItPy's `execute()`); a visual
-> end-to-end run just needs a cross-process DDS config on WSL2 (it works out of
-> the box on a native ROS 2 box). Real-hardware validation waits for the Skate.
+> SRDF + OMPL) and reports *"You can start planning now!"*, **MoveItPy plans
+> collision-free bimanual trajectories** for `left_arm` and `right_arm`
+> (~13–15 waypoints, with the SRDF collision matrix active), and the **full
+> execution loop runs — MoveItPy `execute()` → the `FollowJointTrajectory`
+> bridge → the driver → the sim, with the sim arm visibly moving to the planned
+> pose** (a shoulder joint drove 0 → ~1.14 rad, commands streamed, zero driver
+> rejects). Five real issues were caught &amp; fixed during the live bring-up:
+> the SRDF `<robot>` name must match the URDF (`r04`); the URDF's scheme-less
+> mesh paths need `file://` URIs; the Jazzy planning-pipeline params are
+> **lists** (`planning_plugins`, request/response adapters); WSL2 needs a
+> CycloneDDS loopback-**unicast** profile for cross-process discovery; and WSL2
+> loopback drops UDP datagrams over ~1472 B, so the sim's ~2 kB `state_est`
+> telemetry is now fragmented and reassembled by the UDP transport. The
+> SRDF↔URDF consistency, trajectory interpolation, the UDP
+> fragmentation/reassembly and the driver arm-fallback are all unit-tested
+> without ROS. Real-hardware validation waits for the Skate.
 
 ## Planning groups
 

@@ -189,6 +189,11 @@ class SkateDriver(Node):
         self._last_state_count = st.n_packets
 
         pos = st.dof_pos()
+        if pos is None:
+            # Fall back to raw motor telemetry when the calibrated state-estimate
+            # stream is unavailable (e.g. dropped by a low-MTU link), so the
+            # driver still arms and publishes joint states.
+            pos = st.motor_pos()
         if pos is not None:
             if self.targ is None:
                 # arm at the measured pose so the first command can't jump
