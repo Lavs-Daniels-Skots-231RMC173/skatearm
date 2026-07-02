@@ -1050,9 +1050,10 @@ function updateTop() {
   if (!state) return;
   const vp = $("viewport");
   if (vp) {
-    vp.classList.toggle("cue-estop", !!state.estop);
-    vp.classList.toggle("cue-dampened", !state.estop && !state.live);
+    vp.classList.toggle("cue-estop", !!state.estop && !state.observe);
+    vp.classList.toggle("cue-dampened", !state.estop && !state.live && !state.observe);
     vp.classList.toggle("cue-live", !state.estop && !!state.live);
+    vp.classList.toggle("cue-observe", !!state.observe);   // calm azure, not a fault
   }
   chip("chip-link", state.connected, "LINK", "NO LINK");
   const lat = $("chip-lat");
@@ -1079,6 +1080,12 @@ function updateTop() {
     const moving = !!(state.homing || state.routing) || performance.now() < movingUntil;
     if (state.live) { liveEl.textContent = moving ? "MOVING" : "LIVE"; liveEl.classList.toggle("moving", moving); }
     else liveEl.classList.remove("moving");
+    if (state.observe) { liveEl.textContent = "OBSERVE"; liveEl.className = "chip on"; }
+  }
+  const xc = $("chip-ext");
+  if (xc) {
+    xc.style.display = state.external ? "" : "none";  // external commander drives
+    xc.className = "chip on moving";
   }
   const gc = $("chip-guard");
   if (gc && state.guard) {
@@ -1128,6 +1135,12 @@ function updateTop() {
   }
   $("mode-sim").className = state.mode === "sim" ? "active sim" : "";
   $("mode-real").className = state.mode === "real" ? "active real" : "";
+  const obt = $("observe-toggle");
+  if (obt) {
+    obsOn = !!state.observe;
+    obt.classList.toggle("on", obsOn);
+    obt.setAttribute("aria-pressed", obsOn ? "true" : "false");
+  }
   $("foot-mode").textContent = `mode: ${state.mode}`;
   const es = $("btn-estop");
   es.textContent = state.estop ? "RESUME" : "E-STOP";
@@ -1139,6 +1152,10 @@ function updateTop() {
     banner.textContent = pvDriven
       ? "PREVIEW — you're driving the twin (jog · sliders · Home). Advanced features need the local server"
       : "PREVIEW — recording plays · grab a joint slider, hold ± or press Home to drive it yourself";
+  } else if (state.observe) { banner.className = "observe";
+    banner.textContent = state.external
+      ? "OBSERVE — an external commander is driving (e.g. MoveIt)"
+      : "OBSERVE — watching only · toggle OBSERVE off to command";
   } else if (!state.live) { banner.className = "dampened";
     banner.textContent = state.estop
       ? "DAMPENED — press RESUME to enable motion"
@@ -1390,6 +1407,11 @@ if (!PREVIEW && $("btn-cam")) {
   $("btn-cam").title = "preview is a recording — run the local server";
 }
 
+let obsOn = false;
+$("observe-toggle").onclick = () => send({ type: "observe", on: !obsOn });
+$("observe-toggle").onkeydown = (e) => {
+  if (e.key === "Enter") { e.preventDefault(); send({ type: "observe", on: !obsOn }); }
+};
 $("mode-sim").onclick = () => send({ type: "set_mode", mode: "sim" });
 $("mode-real").onclick = () => {
   if (confirm("Switch to REAL robot? It will stay DAMPENED until you press RESUME."))

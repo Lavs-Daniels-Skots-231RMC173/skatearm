@@ -21,9 +21,9 @@ redistributed).
 📖 **Docs & `rbt` API reference → [dsl-robotics.github.io/skatearm/commander.html](https://dsl-robotics.github.io/skatearm/commander.html)**
 
 <div align="center">
-  <img src="../../docs/img/cockpit_v0724_cockpit.webp" width="680px" alt="The Skate Commander cockpit (v0.8.1): an Isaac-Sim-style workstation — menu bar, tool rail, 3D twin, STAGE / PROPERTY dock and live telemetry plots">
+  <img src="../../docs/img/cockpit_v0724_cockpit.webp" width="680px" alt="The Skate Commander cockpit (v0.8.2): an Isaac-Sim-style workstation — menu bar, tool rail, 3D twin, STAGE / PROPERTY dock and live telemetry plots">
   <br>
-  <em><strong>v0.8.1 cockpit</strong> — an Isaac-Sim-style workstation: a menu bar, a left tool rail, the 3D MuJoCo twin, a STAGE / PROPERTY dock and live telemetry plots.</em>
+  <em><strong>v0.8.2 cockpit</strong> — an Isaac-Sim-style workstation: a menu bar, a left tool rail, the 3D MuJoCo twin, a STAGE / PROPERTY dock and live telemetry plots.</em>
 </div>
 
 <div align="center">
@@ -35,9 +35,9 @@ redistributed).
 </div>
 
 <div align="center">
-  <img src="../../docs/img/commander_mirror.gif" width="680px" alt="Skate Commander v0.8.1: drag-IK and mirror-mode bimanual motion in the workstation while live telemetry plots track it">
+  <img src="../../docs/img/commander_mirror.gif" width="680px" alt="Skate Commander v0.8.2: drag-IK and mirror-mode bimanual motion in the workstation while live telemetry plots track it">
   <br>
-  <em><strong>v0.8.1 cockpit in action</strong> — mirror mode drives both arms from one slider while the live telemetry plots track the motion.</em>
+  <em><strong>v0.8.2 cockpit in action</strong> — mirror mode drives both arms from one slider while the live telemetry plots track the motion.</em>
 </div>
 
 <div align="center">
@@ -47,13 +47,13 @@ redistributed).
     <td width="50%"><img width="100%" src="../../docs/img/cockpit_plots.webp" alt="Live Foxglove-style telemetry strip charts under the 3D view"><br><sub><b>Live telemetry plots</b> — angle / velocity / temperature / TCP / RTT at 30 Hz</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img width="100%" src="../../docs/img/cockpit_v0724_cockpit.webp" alt="The v0.8.1 Isaac-Sim-style cockpit: menu bar, tool rail, 3D twin, STAGE/PROPERTY dock"><br><sub><b>Isaac-Sim-style workstation</b> — menu bar, tool rail, Stage / Property dock, timeline</sub></td>
+    <td width="50%"><img width="100%" src="../../docs/img/cockpit_v0724_cockpit.webp" alt="The v0.8.2 Isaac-Sim-style cockpit: menu bar, tool rail, 3D twin, STAGE/PROPERTY dock"><br><sub><b>Isaac-Sim-style workstation</b> — menu bar, tool rail, Stage / Property dock, timeline</sub></td>
     <td width="50%"><img width="100%" src="../../docs/img/cockpit_ghost.webp" alt="Translucent ghost-robot preview with an Approve / Cancel gate"><br><sub><b>Ghost preview</b> — risky moves wait behind an Approve / Cancel gate</sub></td>
   </tr>
 </table>
 </div>
 
-## Features (v0.8.1)
+## Features (v0.8.2)
 
 The cockpit is structured as a NVIDIA-Isaac-Sim-style workstation: a **menu bar**, a left vertical **tool rail**, a center **3D View**, a right **STAGE** (scene hierarchy) over **PROPERTY** (inspector), and a bottom **TIMELINE / CONSOLE / CONTENT** browser - on a flat, token-driven dark theme.
 
@@ -67,6 +67,15 @@ The cockpit is structured as a NVIDIA-Isaac-Sim-style workstation: a **menu bar*
   eye-toggled RGB axis triads (with frame-name labels) that track the kinematics
 * **Global speed override** (teach-pendant) — a SPD slider scales all motion
   server-side (jog + every glide: home, sequences, RRT routes)
+* **OBSERVE — external-commander observer** — one click turns the cockpit
+  into a pure observer on a **shared sim endpoint**: telemetry keeps flowing
+  (heartbeats only, zero commands transmitted) while an external stack —
+  e.g. the [`skate_ros2`](../skate_ros2/) driver with **MoveIt 2** — drives
+  the same robot. The twin mirrors the motion live and an **EXTERNAL** chip
+  lights while it moves; both OBSERVE transitions land in E-STOP re-armed at
+  the measured pose, so entering or leaving observer mode can never yank the
+  robot. `--sim-host` attaches the cockpit to an endpoint on another host
+  (e.g. a sim inside WSL)
 * **Isaac inspection tools** — a **sim transport** (Play / Pause / Step / Reset
   with real server-side pause / single-step of the autonomous motion), a
   click-two-points **measure** tool, a viewport **stats HUD** (FPS / draw-calls
@@ -230,7 +239,8 @@ Starts **estopped**; RESUME is an explicit human action. Arms at the robot's
 tab → deadman drops in 0.3 s (firmware watchdog semantics). Joint limits are
 clamped at the bridge; self-colliding targets never leave the server; the
 lower chain is locked in REAL mode. Overtemp (58 °C) latches a whole-body
-dampen.
+dampen. **OBSERVE** (observer mode) transmits nothing at all, and both its
+transitions land latched in E-STOP, re-armed at the measured pose.
 
 ## Quick start (no hardware)
 

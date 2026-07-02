@@ -281,7 +281,7 @@ def make_collision_guard(collision_xml, get_obstacles=None):
 
 
 def build_app(model_dir, real_host="r.local", sim_port=2000,
-              collision_model=None):
+              sim_host="127.0.0.1", collision_model=None):
     model_dir = Path(model_dir)
     urdf_path = model_dir / "skt_v3.urdf"
     mesh_dir = model_dir / "skt_v3_meshes" / "scaled_stl_files"
@@ -306,6 +306,7 @@ def build_app(model_dir, real_host="r.local", sim_port=2000,
 
     kin = {arm: ArmKinematics(model, arm) for arm in ("left", "right")}
     bridge = RobotBridge(real_host=real_host, sim_port=sim_port,
+                         sim_host=sim_host,
                          limits=joint_limits(model), kin=kin)
     bridge.mirror_signs, bridge.mirror_axis = compute_mirror_map(kin)
     print(f"[commander] mirror map: axis={'xyz'[bridge.mirror_axis]} "
@@ -893,6 +894,8 @@ def handle_command(bridge: RobotBridge, cmd: dict, runner=None, tools=None,
         bridge.clear_contact()
     elif t == "set_mode":
         bridge.set_mode(cmd["mode"])
+    elif t == "observe":
+        bridge.set_observe(bool(cmd.get("on", not bridge.observe)))
 
 
 SIM_DIR = Path(__file__).resolve().parents[3] / "sim"
@@ -950,6 +953,10 @@ def main(argv=None):
     ap.add_argument("--real", action="store_true",
                     help="drive a real Skate instead of the local sim endpoint")
     ap.add_argument("--real-host", default="r.local")
+    ap.add_argument("--sim-host", default="127.0.0.1",
+                    help="advanced: attach to a sim endpoint on another host "
+                         "(e.g. a WSL IP running the ROS 2 stack) instead of "
+                         "127.0.0.1; a non-local host disables --spawn-sim")
     ap.add_argument("--port", type=int, default=8088)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--no-browser", action="store_true",
@@ -978,7 +985,9 @@ def main(argv=None):
                 sys.exit(f"[commander] setup failed (the sim needs the model): {e}")
             print(f"[commander] WARNING: collision guard unavailable: {e}")
 
-    spawn = args.spawn_sim or (str(collision_xml) if sim_mode else None)
+    local_sim = args.sim_host in ("127.0.0.1", "localhost")
+    spawn = args.spawn_sim or (str(collision_xml)
+                               if sim_mode and local_sim else None)
     guard = args.collision_model or (str(collision_xml) if collision_xml else None)
 
     sim_proc = None
@@ -991,7 +1000,7 @@ def main(argv=None):
 
     import uvicorn
     app = build_app(str(model_dir), real_host=args.real_host,
-                    collision_model=guard)
+                    sim_host=args.sim_host, collision_model=guard)
     url = f"http://{args.host}:{args.port}"
     mode = "REAL" if args.real else "SIM"
     print(f"[commander] {url}  ({mode} — starts dampened, press RESUME in the UI)")

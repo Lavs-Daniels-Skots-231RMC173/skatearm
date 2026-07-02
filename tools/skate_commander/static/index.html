@@ -17,7 +17,7 @@
 
   <!-- ============ MENU BAR ============ -->
   <div id="menubar">
-    <div id="logo">SKATE <span>COMMANDER</span><em id="ver">v0.8.1</em></div>
+    <div id="logo">SKATE <span>COMMANDER</span><em id="ver">v0.8.2</em></div>
     <nav id="menus">
       <span class="menu">File</span><span class="menu">Edit</span><span class="menu">Create</span>
       <span class="menu">Window</span><span class="menu">Tools</span><span class="menu">Utilities</span>
@@ -28,12 +28,17 @@
       <div id="mode-sim" class="active sim">SIM</div>
       <div id="mode-real">REAL</div>
     </div>
+    <div id="observe-toggle" role="button" tabindex="0" aria-pressed="false"
+         title="Observer mode - the cockpit only watches: telemetry keeps flowing, no commands are sent. Attach alongside an external commander (e.g. the ROS 2 / MoveIt driver) sharing the same sim endpoint. Leaving OBSERVE lands in E-STOP.">
+      <span>OBSERVE</span>
+    </div>
     <div class="status-cluster" role="status" aria-live="polite">
       <div class="chip" id="chip-link" title="Robot/sim link over the UDP wire">LINK</div>
       <div class="chip" id="chip-lat" aria-hidden="true" title="Round-trip latency - browser/server ping echo" style="display:none"></div>
       <div class="chip" id="chip-bw" aria-hidden="true" title="Downlink bandwidth - telemetry received from the server" style="display:none"></div>
       <div class="chip" id="chip-armed">ARMED</div>
       <div class="chip" id="chip-live">DAMPENED</div>
+      <div class="chip" id="chip-ext" style="display:none" title="An external commander (e.g. MoveIt) is driving the robot - the cockpit is observing">EXTERNAL</div>
       <div class="chip" id="chip-temp">TEMP</div>
       <div class="chip" id="chip-guard" style="display:none" title="Self-collision guard: impossible poses are rejected before being sent">GUARD</div>
       <div class="chip" id="chip-sing" style="display:none" title="Near a singularity - the arm is nearly straight">SING</div>

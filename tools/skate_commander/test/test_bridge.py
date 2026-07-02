@@ -416,3 +416,68 @@ def test_reachable_degenerate():
     br = RobotBridge(sim_port=_free_port())
     assert br.reachable("right", [0.1, 0.3, 0.0]) is None      # no kin / no targ -> None
     assert br.reachable("right", [0.1, 0.3]) is None           # bad length -> None
+
+
+def test_observe_mode():
+    """OBSERVE: the cockpit attaches as a pure observer next to an EXTERNAL
+    commander on one shared sim endpoint — telemetry in, zero commands out,
+    and both OBSERVE transitions land safely in E-STOP."""
+    model = os.environ.get("SKATE_MJCF", "/tmp/skate_teleop/skt_v3/skt_v3_control.xml")
+    if not Path(model).exists():
+        print("SKIP: no control model"); return
+    from skate_ros2.sim_endpoint import SkateSimEndpoint
+    from skate_ros2.protocol import SkateLink
+
+    port = _free_port()
+    ep = SkateSimEndpoint(model, port=port, bind="127.0.0.1", verbose=False)
+    th = threading.Thread(target=ep.run, kwargs={"duration": 25.0}, daemon=True)
+    th.start()
+
+    br = RobotBridge(sim_host="127.0.0.1", sim_port=port)
+    br.set_observe(True)
+    snap = _spin(br, 0.8)
+    assert snap["connected"] and snap["armed"]     # telemetry + armed at pose
+    assert snap["observe"] and snap["estop"] and not snap["live"]
+    assert ep.n_cmds == 0, "observer transmitted a command"
+
+    # resume is refused while observing
+    assert not br.resume() and br.estop
+
+    # an external commander raises the elbow; the observer's twin follows
+    cmd = SkateLink("127.0.0.1", port)
+    start = np.array(br.targ)
+    targ = start.copy()
+    saw_ext = False
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < 2.5:
+        t = time.monotonic() - t0
+        s = min(t / 1.5, 1.0)
+        s = s * s * (3 - 2 * s)
+        targ[11] = (1 - s) * start[11] + s * 1.2
+        cmd.send_command(targ, deadman=(1, 1, 1))
+        cmd.poll()
+        snap = br.tick(1.0 / 60, ui_attached=True)
+        saw_ext = saw_ext or snap["external"]
+        time.sleep(1.0 / 60)
+    assert ep.n_cmds > 0, "external commander's commands never arrived"
+    assert abs(br.targ[11] - 1.2) < 0.05, "observer targ ignored external motion"
+    assert saw_ext, "EXTERNAL flag missed the external motion"
+
+    # commander dies -> the sim dampens (command watchdog), observer unharmed
+    cmd.close()
+    _spin(br, 0.5)
+    assert ep.dampened
+    assert ep.n_cmds and br.link.connected
+
+    # leaving OBSERVE lands estopped, re-armed at the measured pose
+    n_before = ep.n_cmds
+    br.set_observe(False)
+    assert br.estop and br.targ is None and not br.observe
+    snap = _spin(br, 0.8)
+    assert snap["armed"] and snap["estop"] and not snap["observe"]
+    assert abs(snap["q"][11] - 1.2) < 0.08     # robot stays where MoveIt left it
+    assert ep.n_cmds > n_before                # cockpit streams (dampened) again
+
+    br.close()
+    th.join(timeout=30)
+    ep.close()

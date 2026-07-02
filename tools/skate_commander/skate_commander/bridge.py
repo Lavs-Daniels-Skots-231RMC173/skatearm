@@ -83,6 +83,14 @@ class RobotBridge:
 
         self.targ = None                   # armed target (np[26]) or None
         self.estop = True                  # latched; starts SAFE (dampened)
+        # OBSERVE: pure-observer mode — telemetry keeps flowing (heartbeats
+        # only) but the cockpit never transmits a command, so it can attach
+        # alongside an external commander (e.g. the ROS 2 / MoveIt driver)
+        # on a shared sim endpoint without fighting it for the deadman.
+        self.observe = False
+        self.ext_vel_eps = 0.05            # rad/s arm motion = external drive
+        self._ext_until = 0.0              # EXTERNAL chip hold (anti-flicker)
+        self._ext_joints = np.r_[names.LEFT_ARM, names.RIGHT_ARM]
         self.overtemp = False
         # contact reflex: an unexpected torque spike on the arm chain (vs a
         # slow per-joint baseline) latches a soft-stop — motion dampens like
@@ -327,10 +335,30 @@ class RobotBridge:
         self.seq_stop()
 
     def resume(self):
-        """Clear the estop latch. Only possible once telemetry is up."""
-        if self.link.connected:
+        """Clear the estop latch. Only possible once telemetry is up, and
+        never while OBSERVE holds the cockpit passive."""
+        if self.link.connected and not self.observe:
             self.estop = False
         return not self.estop
+
+    def set_observe(self, on):
+        """Toggle pure-observer mode. Both transitions land in E-STOP with
+        the target re-armed at the measured pose, so neither entering nor
+        leaving OBSERVE can move the robot — an explicit Resume is always
+        required to command again."""
+        on = bool(on)
+        if on == self.observe:
+            return self.observe
+        self.observe = on
+        self.estop = True
+        self.targ = None                   # re-arm from the measured pose
+        self.jog_dir[:] = 0
+        self.jog_vel[:] = 0
+        self.carry = False
+        self.clear_ik_target()
+        self.seq_stop()
+        self._ext_until = 0.0
+        return self.observe
 
     # -- contact reflex --------------------------------------------------------
     def _contact_update(self, tau, vel):
@@ -862,6 +890,28 @@ class RobotBridge:
             elif self.overtemp and tmax < OVERTEMP_RELEASE_C:
                 self.overtemp = False
 
+        if self.observe:
+            # Pure observer: the heartbeat inside link.poll() keeps telemetry
+            # flowing, but no command is EVER transmitted — the external
+            # commander (e.g. the ROS 2 / MoveIt driver) owns the deadman.
+            # Track the measured pose so leaving OBSERVE re-arms exactly
+            # where the robot is, and surface external motion for the UI.
+            self.jog_dir[:] = 0
+            self.jog_vel[:] = 0
+            if pos is not None:
+                self.targ = np.asarray(pos, dtype=float).copy()
+            dq = st.dof_vel()
+            if dq is not None:
+                ext = float(np.max(np.abs(
+                    np.asarray(dq, dtype=float)[self._ext_joints])))
+                if ext > self.ext_vel_eps:
+                    self._ext_until = time.monotonic() + 0.6
+            self._tau_ref = None
+            self._contact_run = 0
+            if self.recorder is not None:
+                self.recorder.observe(self.targ, dt)   # teach-in still works
+            return self.snapshot(ui_attached)
+
         # contact reflex: while otherwise-live, an unexpected arm-torque spike
         # latches a soft-stop. When not otherwise-live the baseline is dropped
         # so a dampened arm settling can't false-trip on the next resume.
@@ -942,9 +992,11 @@ class RobotBridge:
             "connected": self.link.connected,
             "armed": self.targ is not None,
             "estop": self.estop,
+            "observe": self.observe,
+            "external": self.observe and time.monotonic() < self._ext_until,
             "overtemp": self.overtemp,
             "live": (ui_attached and not self.estop and not self.overtemp
-                     and not self.contact_tripped
+                     and not self.contact_tripped and not self.observe
                      and self.targ is not None and self.link.connected),
             "q": st.dof_pos(),
             "dq": st.dof_vel(),

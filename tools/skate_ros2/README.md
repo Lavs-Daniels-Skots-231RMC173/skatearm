@@ -247,6 +247,22 @@ ros2 launch skate_moveit_config demo.launch.py \
 > without ROS. On hardware, a `ros2_control` `JointTrajectoryController` + a
 > Skate `SystemInterface` is the production alternative to the Python bridge.
 
+### Watch a MoveIt execution live in the cockpit
+
+The sim endpoint streams telemetry to **every** client heard from recently
+(3 s TTL), not just the last sender — so two stacks can share one sim. That
+turns [Skate Commander](../skate_commander/) into a live viewer for MoveIt:
+start the cockpit (its spawned sim endpoint binds `0.0.0.0:2000`), click
+**OBSERVE** in its menu bar (the cockpit keeps receiving telemetry but stops
+transmitting commands), then run the driver + MoveIt against the same
+endpoint — the browser twin mirrors the executed trajectory in real time and
+an **EXTERNAL** chip lights while it moves. On WSL2 with mirrored networking
+`robot_host:=127.0.0.1` reaches the Windows-hosted sim directly; otherwise
+use the Windows host's IP (and `--sim-host` on the cockpit for the reverse
+direction). Verified live: a 15-waypoint MoveItPy plan executed SUCCEEDED on
+the shared sim with the cockpit twin sweeping the full trajectory — zero
+driver rejects.
+
 ## Sim endpoint: honest approximations
 
 The emulator is faithful on the wire (port, packet layout, watchdog timing,
@@ -257,7 +273,12 @@ telemetry classes) but approximates the physics-side behavior:
 * motor temperatures are **synthetic** (warm with |τ|, cool to 25 °C) so the
   temperature plumbing can be exercised;
 * `vel_cmd` / `height_cmd` are accepted but ignored (fixed-base model);
-* INS reports a static upright pose.
+* INS reports a static upright pose;
+* telemetry goes to every recently-heard client (the firmware streams only to
+  the last sender), and the deadman watchdog follows the **command** stream
+  rather than any packet — with several peers attached, an observer's
+  heartbeats must never keep a dead commander's last command alive. With a
+  single commanding client the behavior is unchanged.
 
 ## Tests
 
