@@ -142,13 +142,14 @@ def test_estop_kills_program_and_sandbox_holds():
 
     rig.br.resume()
     r2 = ProgramRunner(rig.br)
-    assert r2.run("import os\nprint(os.getcwd())")
-    assert _wait(lambda: not r2.running, 5)
-    assert any(ln.startswith("x ") for ln in r2.log), r2.log
+    # the AST sandbox refuses import at compile time — never even starts
+    assert not r2.run("import os\nprint(os.getcwd())")
+    assert any(ln.startswith("x rejected") for ln in r2.log), r2.log
+    # open() passes the AST but the restricted builtins lack it -> NameError
     assert r2.run("open('x.txt', 'w')")
     assert _wait(lambda: not r2.running, 5)
     assert any("NameError" in ln for ln in r2.log), r2.log
-    print("PASS sandbox: import / open are not available")
+    print("PASS sandbox: import rejected up front; open unavailable at runtime")
 
     bad = ProgramRunner(rig.br)
     assert not bad.run("def broken(:\n  pass")
