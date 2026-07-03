@@ -1,20 +1,13 @@
-# RViz2 config for the Skate MoveIt demo — a MotionPlanning panel over the
-# planning scene + robot model. A starting layout: pick left_arm / right_arm /
-# both_arms in the panel, set a goal and Plan & Execute. RViz fills any
-# unspecified fields with its defaults.
+# RViz2 config for the Skate MoveIt demo — the MotionPlanning display over
+# the live planning scene. Pick left_arm / right_arm / both_arms in the
+# MotionPlanning frame, drag the goal marker, Plan / Plan & Execute. (In
+# ROS 2 MotionPlanning is a *Display* — it brings its own dockable frame;
+# a Panels entry for it is a ROS 1 leftover that fails to load.)
 Panels:
   - Class: rviz_common/Displays
     Name: Displays
   - Class: rviz_common/Views
     Name: Views
-  - Class: moveit_rviz_plugin/MotionPlanning
-    Name: MotionPlanning
-    Planning Request:
-      Planning Group: left_arm
-    Planned Path:
-      Loop Animation: true
-      Show Trail: false
-      State Display Time: 0.05 s
 Visualization Manager:
   Global Options:
     Fixed Frame: base_link2
@@ -27,22 +20,32 @@ Visualization Manager:
       Color: 160; 160; 164
     - Class: rviz_default_plugins/TF
       Name: TF
+      Enabled: false
       Show Names: true
       Marker Scale: 0.3
-    - Class: rviz_default_plugins/RobotModel
-      Name: RobotModel
-      Description Topic:
-        Value: /robot_description
-      Visual Enabled: true
-    - Class: moveit_rviz_plugin/PlanningScene
-      Name: PlanningScene
+    - Class: moveit_rviz_plugin/MotionPlanning
+      Name: MotionPlanning
+      Enabled: true
       Move Group Namespace: ""
       Robot Description: robot_description
+      Planning Scene Topic: monitored_planning_scene
       Scene Geometry:
         Scene Alpha: 0.9
       Scene Robot:
-        Robot Alpha: 0.5
+        Robot Alpha: 1.0
         Show Robot Visual: true
+      Planning Request:
+        Planning Group: left_arm
+        Interactive Marker Size: 0.12
+        Query Goal State: true
+        Goal State Alpha: 0.4
+        Query Start State: false
+      Planned Path:
+        Loop Animation: true
+        Show Robot Visual: true
+        Robot Alpha: 1
+        State Display Time: 0.05 s
+        Show Trail: false
   Tools:
     - Class: rviz_default_plugins/MoveCamera
     - Class: rviz_default_plugins/Select

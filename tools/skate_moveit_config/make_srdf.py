@@ -54,6 +54,13 @@ def acm(joints):
             for lb in LOWER:
                 for lsuf in ("_1", "_Mirror__1"):   # arm <-> lower body
                     add(al, lb + lsuf, "Never")
+    # Mesh-level contacts in the DOCUMENTED rest pose: with the arms hanging
+    # both forearms graze the torso, and MoveIt's start-state collision check
+    # refuses to plan FROM home without these two excludes. (The cockpit's
+    # own capsule guard keeps arm<->torso pairs ACTIVE — capsules don't graze
+    # there; this is purely the URDF-mesh geometry.)
+    for suf in ("_1", "_Mirror__1"):
+        add("base_link", "lowArm" + suf, "Default")
     return pairs
 
 

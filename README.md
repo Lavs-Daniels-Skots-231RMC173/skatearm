@@ -207,6 +207,12 @@ On top of the wire, [`skate_moveit_config`](tools/skate_moveit_config/) adds **M
 MoveIt 2 (skate_moveit_config)  →  FollowJointTrajectory bridge  →  skate_driver  →  UDP  →  MuJoCo sim / real Skate
 ```
 
+<div align="center">
+  <img src="docs/img/rviz_moveit.gif" width="640px" alt="RViz MotionPlanning driving the Skate: set a goal, plan an OMPL trajectory, execute — the arm moves to the goal against the MuJoCo sim">
+  <br>
+  <em>RViz <strong>MotionPlanning</strong> on this stack — set a goal, <strong>Plan</strong>, <strong>Execute</strong>; the Skate arm drives to it live over the UDP bridge. (<a href="docs/video/rviz_moveit.mp4">HD clip</a>)</em>
+</div>
+
 Prefer the standard controller stack? [`skate_ros2_control`](tools/skate_ros2_control/) provides a **C++ ros2_control `SystemInterface`** plus per-arm `JointTrajectoryController`s under the same controller names — MoveIt executes through `controller_manager` with zero config changes (verified end-to-end on Jazzy, no Python bridge in the loop).
 
 The cockpit can attach to the **same** sim endpoint as a pure observer — toggle **OBSERVE** and a MoveIt execution renders live in the browser twin, with an **EXTERNAL** chip while it moves ([details](tools/skate_commander/)).

@@ -7,6 +7,12 @@ re-point the same stack at the real robot when it arrives.
 
 Part of the [SkateArm](../../README.md) project.
 
+<p align="center">
+  <img src="../../docs/img/rviz_moveit.gif" width="720px" alt="RViz MotionPlanning: a left-arm goal is set with the interactive marker, MoveIt plans an OMPL trajectory and executes it — the Skate arm drives to the goal against the MuJoCo sim endpoint">
+  <br>
+  <em>The RViz <strong>MotionPlanning</strong> panel driving the Skate over this config: set a goal (orange ghost), <strong>Plan</strong> an OMPL trajectory, <strong>Execute</strong> — the arm drives to the goal through the <code>FollowJointTrajectory</code> bridge → driver → MuJoCo sim. HD clip: <a href="../../docs/video/rviz_moveit.mp4">rviz_moveit.mp4</a>.</em>
+</p>
+
 > **Status — built &amp; end-to-end-verified on ROS 2 Jazzy** (Ubuntu 24.04 / WSL2):
 > `colcon build` is clean, `move_group` loads this config (URDF `r04` + this
 > SRDF + OMPL) and reports *"You can start planning now!"*, **MoveItPy plans

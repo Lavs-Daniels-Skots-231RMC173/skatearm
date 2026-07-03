@@ -25,7 +25,11 @@ Honest approximations (documented, not hidden):
   so temperature plumbing can be exercised end-to-end;
 * ``vel_cmd``/``height_cmd`` are accepted but ignored — the control model has
   a fixed base (no wheel actuators yet);
-* INS stream reports a static upright pose.
+* INS stream reports a static upright pose;
+* reported joint positions snap onto the joint limits within 1e-5 rad —
+  MuJoCo's soft constraints park a joint a few 1e-7 rad outside its range at
+  a limit stop, which strict consumers (MoveIt's start-state bounds check)
+  refuse; larger violations pass through unmodified.
 """
 
 from __future__ import annotations
@@ -191,10 +195,25 @@ class SkateSimEndpoint:
         if sent:
             self.n_telemetry += 1
 
+    def _reported_q(self):
+        """Joint positions for telemetry: physical qpos snapped onto the
+        joint limits when within 1e-5 rad. MuJoCo's soft constraints can
+        leave a joint a few 1e-7 rad OUTSIDE its range while parked on a
+        limit stop (e.g. the elbow's 0-limit in the home pose), and strict
+        consumers refuse such a state — MoveIt's CheckStartStateBounds
+        aborts planning (Jazzy's fix_start_state only normalizes continuous
+        joints, it cannot clamp a revolute epsilon-violation). Larger
+        violations pass through unmodified — honesty over cosmetics."""
+        q = self.d.qpos[:names.N_JOINTS].copy()
+        snap = 1e-5
+        q = np.where(np.abs(q - self.lo) < snap, self.lo, q)
+        q = np.where(np.abs(q - self.hi) < snap, self.hi, q)
+        return q
+
     def send_telemetry(self):
         if not self.peers:
             return
-        q = self.d.qpos[:names.N_JOINTS]
+        q = self._reported_q()
         v = self.d.qvel[:names.N_JOINTS]
         tau = self.d.actuator_force[:names.N_JOINTS]
 

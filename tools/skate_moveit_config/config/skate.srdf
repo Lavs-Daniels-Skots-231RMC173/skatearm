@@ -42,6 +42,8 @@
   <disable_collisions link1="base_link" link2="base_link2" reason="Adjacent"/>
   <disable_collisions link1="base_link" link2="hip_1" reason="Adjacent"/>
   <disable_collisions link1="base_link" link2="hip_Mirror__1" reason="Adjacent"/>
+  <disable_collisions link1="base_link" link2="lowArm_1" reason="Default"/>
+  <disable_collisions link1="base_link" link2="lowArm_Mirror__1" reason="Default"/>
   <disable_collisions link1="base_link" link2="neck_1" reason="Adjacent"/>
   <disable_collisions link1="base_link" link2="shoulder_1" reason="Adjacent"/>
   <disable_collisions link1="base_link" link2="shoulder_Mirror__1" reason="Adjacent"/>

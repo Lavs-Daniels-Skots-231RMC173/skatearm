@@ -104,6 +104,37 @@ def test_observer_sees_commanders_motion():
     ep.close()
 
 
+
+
+
+def test_reported_q_snaps_limit_epsilon():
+    """Telemetry snaps eps-outside-limit positions onto the limit (MoveIt's
+    start-state bounds check refuses raw soft-constraint epsilon)."""
+    try:
+        import mujoco  # noqa: F401
+    except ImportError:
+        print("SKIP: mujoco not installed")
+        return
+    model = _find_model()
+    if model is None:
+        print("SKIP: set $SKATE_MJCF to skt_v3_control.xml")
+        return
+
+    from skate_ros2.sim_endpoint import SkateSimEndpoint
+
+    ep = SkateSimEndpoint(model, port=_free_port(), bind="127.0.0.1",
+                          verbose=False)
+    lo11 = ep.lo[11]
+    ep.d.qpos[11] = lo11 - 5e-7          # soft-constraint epsilon at the stop
+    assert ep._reported_q()[11] == lo11, "epsilon violation not snapped"
+    ep.d.qpos[11] = lo11 - 0.02          # a REAL violation must stay visible
+    assert abs(ep._reported_q()[11] - (lo11 - 0.02)) < 1e-12
+    ep.close()
+
+
+
+
 if __name__ == "__main__":
     test_observer_sees_commanders_motion()
+    test_reported_q_snaps_limit_epsilon()
     print("OK")

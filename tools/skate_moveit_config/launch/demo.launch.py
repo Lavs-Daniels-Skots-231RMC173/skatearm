@@ -44,7 +44,11 @@ def _setup(context, *_a, **_k):
     robot_description = {"robot_description": urdf_xml}
     with open(os.path.join(pkg, "config", "skate.srdf")) as f:
         robot_description_semantic = {"robot_description_semantic": f.read()}
-    kinematics = _yaml(os.path.join(pkg, "config", "kinematics.yaml"))
+    # group solvers must sit under robot_description_kinematics — passing the
+    # yaml top-level (left_arm:/right_arm:) raw leaves move_group/RViz with
+    # "No kinematics plugins defined" and a non-draggable goal marker
+    kinematics = {"robot_description_kinematics":
+                  _yaml(os.path.join(pkg, "config", "kinematics.yaml"))}
     controllers = _yaml(os.path.join(pkg, "config", "moveit_controllers.yaml"))
     joint_limits = {"robot_description_planning":
                     _yaml(os.path.join(pkg, "config", "joint_limits.yaml"))}
@@ -55,6 +59,12 @@ def _setup(context, *_a, **_k):
         "default_planning_pipeline": "ompl",
         "ompl": {
             "planning_plugins": ["ompl_interface/OMPLPlanner"],
+            # NB: an epsilon-out-of-bounds START state aborts planning here
+            # (CheckStartStateBounds) and Jazzy's fix_start_state only
+            # normalizes continuous joints — it cannot clamp a revolute
+            # limit violation. The sim endpoint therefore snaps reported
+            # joint positions onto their limits within 1e-5 rad; on real
+            # hardware the driver is the place for the same snap.
             "request_adapters": [
                 "default_planning_request_adapters/ResolveConstraintFrames",
                 "default_planning_request_adapters/ValidateWorkspaceBounds",
