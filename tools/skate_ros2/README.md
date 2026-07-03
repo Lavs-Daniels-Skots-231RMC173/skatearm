@@ -150,6 +150,13 @@ There is no native ROS 2 on Windows — use **WSL2 Ubuntu 24.04** (= ROS 2
 **Jazzy**). This is the exact environment the MoveIt config was built and
 end-to-end-verified on (planning **and** execution → the sim arm moves).
 
+**The whole path, at a glance:** ① `wsl --install -d Ubuntu-24.04` → ② install
+ROS 2 Jazzy (apt) → ③ `colcon build` the two packages → ④ apply the one-time
+WSL2 DDS fix (copy [`cyclonedds.xml`](cyclonedds.xml) + two env vars) → ⑤ start
+the sim endpoint on `:2000` → ⑥ `ros2 launch skate_moveit_config demo.launch.py`
+→ the RViz **MotionPlanning** window opens on your desktop; set a goal,
+**Plan**, **Execute**. Each step is spelled out below.
+
 ```powershell
 # once, in Windows PowerShell:
 wsl --install -d Ubuntu-24.04     # then set up the Linux user it prompts for
@@ -174,11 +181,22 @@ cp -r /mnt/c/path/to/skatearm/tools/skate_ros2 \
       /mnt/c/path/to/skatearm/tools/skate_moveit_config ~/skate_ws/src/
 cd ~/skate_ws && colcon build && source install/setup.bash
 
+# DDS discovery fix (WSL2 only — see note 1): use the ready-made profile
+cp /mnt/c/path/to/skatearm/tools/skate_ros2/cyclonedds.xml ~/cyclonedds.xml
+sudo apt install -y ros-jazzy-rmw-cyclonedds-cpp
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export CYCLONEDDS_URI=file://$HOME/cyclonedds.xml
+
 # run it (see the MoveIt 2 section below):
 python3 -m skate_ros2.sim_endpoint --model /mnt/c/.../skt_v3/skt_v3_control.xml &
 ros2 launch skate_moveit_config demo.launch.py \
     model_path:=/mnt/c/.../skt_v3 robot_host:=127.0.0.1
 ```
+
+On **Windows 11 the RViz window opens on your desktop automatically** — WSLg
+provides the GUI, no X server to install. (On Windows 10 without WSLg, run an
+X server such as VcXsrv and `export DISPLAY=…`.) The MoveIt **MotionPlanning**
+panel is where you set a goal and click **Plan** / **Execute**.
 
 > **WSL2 setup notes (two one-time fixes; a native ROS 2 Linux box needs
 > neither).** The full multi-node execution loop is verified on WSL2 once these
@@ -187,16 +205,10 @@ ros2 launch skate_moveit_config demo.launch.py \
 > 1. **DDS discovery.** WSL2's default networking breaks ROS 2 cross-process
 >    discovery — two nodes can't see each other's topics/actions and
 >    `ros2 topic list` comes up empty. Fix: CycloneDDS pinned to loopback
->    **unicast**. Install `ros-jazzy-rmw-cyclonedds-cpp`, write a
->    `~/cyclonedds.xml` with a `127.0.0.1` interface,
->    `<AllowMulticast>false</AllowMulticast>`,
->    `<EnableMulticastLoopback>false</EnableMulticastLoopback>` and a
->    `<Peer address="localhost"/>`, then:
->
->    ```bash
->    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
->    export CYCLONEDDS_URI=file://$HOME/cyclonedds.xml
->    ```
+>    **unicast**, shipped ready-made as [`cyclonedds.xml`](cyclonedds.xml) —
+>    just install the RMW, copy the file and point the two env vars at it (the
+>    three commands are in the Quick start above). It sets multicast off, the
+>    `127.0.0.1` interface only, and `localhost` as an explicit discovery peer.
 >    (On WSL2, `ros2 topic list` needs `--no-daemon` — the CLI daemon's
 >    XML-RPC socket hangs there; direct rclpy pub/sub is unaffected.)
 >

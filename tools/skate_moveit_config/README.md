@@ -95,6 +95,11 @@ python make_srdf.py --model /path/to/skate_teleop/skt_v3   # regenerate config/s
 
 ## Build & launch (on a ROS 2 machine)
 
+> **On Windows?** There's no native ROS 2 — follow the step-by-step
+> [WSL2 guide in `skate_ros2`](../skate_ros2/README.md#running-on-windows-wsl2)
+> (install → build → the one-time DDS fix → launch). The commands below are the
+> native-Linux version.
+
 ```bash
 mkdir -p ~/skate_ws/src && cp -r tools/skate_ros2 tools/skate_moveit_config ~/skate_ws/src/
 cd ~/skate_ws && colcon build && source install/setup.bash

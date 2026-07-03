@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CycloneDDS profile for running the SkateArm ROS 2 stack on WSL2.
+
+  WSL2's default networking breaks ROS 2 (Fast DDS) cross-process discovery —
+  two nodes can't see each other's topics/actions and `ros2 topic list` comes
+  up empty. The fix is CycloneDDS pinned to loopback UNICAST: multicast off,
+  the 127.0.0.1 interface only, and localhost as an explicit discovery peer.
+
+  Use it with:
+      export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      export CYCLONEDDS_URI=file://$HOME/cyclonedds.xml   # after copying here
+
+  A native ROS 2 Linux box does NOT need this — it's a WSL2-only workaround.
+-->
+<CycloneDDS xmlns="https://cdds.io/config"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
+  <Domain Id="any">
+    <General>
+      <Interfaces>
+        <NetworkInterface address="127.0.0.1" multicast="false"/>
+      </Interfaces>
+      <AllowMulticast>false</AllowMulticast>
+      <EnableMulticastLoopback>false</EnableMulticastLoopback>
+    </General>
+    <Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <MaxAutoParticipantIndex>50</MaxAutoParticipantIndex>
+      <Peers>
+        <Peer address="localhost"/>
+      </Peers>
+    </Discovery>
+  </Domain>
+</CycloneDDS>
