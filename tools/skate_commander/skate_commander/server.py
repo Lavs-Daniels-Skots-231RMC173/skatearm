@@ -281,7 +281,7 @@ def make_collision_guard(collision_xml, get_obstacles=None):
 
 
 def build_app(model_dir, real_host="r.local", sim_port=2000,
-              sim_host="127.0.0.1", collision_model=None):
+              sim_host="127.0.0.1", collision_model=None, ik="dls"):
     model_dir = Path(model_dir)
     urdf_path = model_dir / "skt_v3.urdf"
     mesh_dir = model_dir / "skt_v3_meshes" / "scaled_stl_files"
@@ -315,6 +315,15 @@ def build_app(model_dir, real_host="r.local", sim_port=2000,
         bridge.guard = make_collision_guard(collision_model, get_obstacles=lambda: bridge.obstacles)
         print("[commander] collision guard ON — self-colliding targets are "
               "rejected before they reach the robot")
+    if str(ik).lower() == "mink" and collision_model:
+        try:
+            from .kinematics_mink import MinkIK
+            bridge.mink = MinkIK(collision_model)
+            print("[commander] IK backend: mink (MuJoCo QP + proactive "
+                  "self-collision avoidance) — DLS is the automatic fallback")
+        except Exception as e:
+            print(f"[commander] mink IK unavailable ({type(e).__name__}: {e}); "
+                  "falling back to the numpy DLS")
     runner = ProgramRunner(bridge)
     bridge.recorder = PoseRecorder()      # teach-in: observed in tick()
     tools = _load_tools()
@@ -967,6 +976,11 @@ def main(argv=None):
     ap.add_argument("--collision-model", metavar="COLLISION_XML", default=None,
                     help="advanced: explicit collision-guard model "
                          "(default: the auto-generated skt_v3_collision.xml)")
+    ap.add_argument("--ik", choices=("dls", "mink"), default=None,
+                    help="drag-IK backend: 'dls' (default, pure-numpy DLS) or "
+                         "'mink' (MuJoCo QP with proactive self-collision "
+                         "avoidance; needs the mink package + a collision model, "
+                         "auto-falls back to dls). Env: SKATE_IK.")
     args = ap.parse_args(argv)
 
     model_dir = Path(args.model_dir) if args.model_dir else _find_model_dir()
@@ -998,9 +1012,12 @@ def main(argv=None):
             cwd=str(Path(__file__).resolve().parents[2] / "skate_ros2"))
         print(f"[commander] sim endpoint spawned (pid {sim_proc.pid})")
 
+    import os
     import uvicorn
+    ik = (args.ik or os.environ.get("SKATE_IK", "dls")).lower()
     app = build_app(str(model_dir), real_host=args.real_host,
-                    sim_host=args.sim_host, collision_model=guard)
+                    sim_host=args.sim_host, collision_model=guard,
+                    ik=("mink" if ik == "mink" else "dls"))
     url = f"http://{args.host}:{args.port}"
     mode = "REAL" if args.real else "SIM"
     print(f"[commander] {url}  ({mode} — starts dampened, press RESUME in the UI)")

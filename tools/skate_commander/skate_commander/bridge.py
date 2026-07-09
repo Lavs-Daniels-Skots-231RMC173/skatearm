@@ -119,6 +119,7 @@ class RobotBridge:
         self.jog_dir = np.zeros(names.N_JOINTS)   # -1/0/+1 per joint
         self.jog_vel = np.zeros(names.N_JOINTS)   # rad/s, accel-limited toward jog_dir*rate
         self.kin = kin or {}               # {"left"/"right": ArmKinematics}
+        self.mink = None                   # optional MinkIK backend (opt-in; DLS is the fallback)
         self.guard = None                  # callable(q26)->True if SELF-COLLIDING
         self.guard_blocking = False
         self.ik_targets = {"left": None, "right": None}
@@ -732,6 +733,20 @@ class RobotBridge:
         self._ik_prev[arm] = None
         self._ik_stall[arm] = 0.0
 
+    def _ik_solve(self, arm, target, tR):
+        """One IK glide step for ``arm``: use the mink backend when enabled
+        (transparently falling back to the numpy DLS on any solver error), else
+        the DLS directly. Same ``(new_q26, pos_err)`` contract either way, so
+        the rest of tick() is unchanged."""
+        if self.mink is not None:
+            try:
+                return self.mink.step(arm, self.targ, target,
+                                      target_R=tR, q_ref=self.ik_comfort)
+            except Exception:
+                pass
+        return self.kin[arm].ik_step(self.targ, target, target_R=tR,
+                                     q_ref=self.ik_comfort)
+
     def set_ik_target(self, arm, pos, auto=False, rot=None):
         """Drag-gizmo target (world meters) + optional orientation (a three.js
         quaternion [x,y,z,w] or a 3x3 matrix). ``rot=None`` is the classic
@@ -940,8 +955,7 @@ class RobotBridge:
                 for arm, target in self.ik_targets.items():
                     if target is not None and arm in self.kin:
                         tR = self.ik_targR.get(arm)
-                        self.targ, err = self.kin[arm].ik_step(
-                            self.targ, target, target_R=tR, q_ref=self.ik_comfort)
+                        self.targ, err = self._ik_solve(arm, target, tR)
                         self.ik_err[arm] = err
                         self.ik_manip[arm] = self.kin[arm].manipulability(self.targ)
                         if tR is not None:

@@ -21,9 +21,9 @@ redistributed).
 📖 **Docs & `rbt` API reference → [dsl-robotics.github.io/skatearm/commander.html](https://dsl-robotics.github.io/skatearm/commander.html)**
 
 <div align="center">
-  <img src="../../docs/img/cockpit_v0724_cockpit.webp" width="680px" alt="The Skate Commander cockpit (v0.8.2): an Isaac-Sim-style workstation — menu bar, tool rail, 3D twin, STAGE / PROPERTY dock and live telemetry plots">
+  <img src="../../docs/img/cockpit_v0724_cockpit.webp" width="680px" alt="The Skate Commander cockpit (v0.8.3): an Isaac-Sim-style workstation — menu bar, tool rail, 3D twin, STAGE / PROPERTY dock and live telemetry plots">
   <br>
-  <em><strong>v0.8.2 cockpit</strong> — an Isaac-Sim-style workstation: a menu bar, a left tool rail, the 3D MuJoCo twin, a STAGE / PROPERTY dock and live telemetry plots.</em>
+  <em><strong>v0.8.3 cockpit</strong> — an Isaac-Sim-style workstation: a menu bar, a left tool rail, the 3D MuJoCo twin, a STAGE / PROPERTY dock and live telemetry plots.</em>
 </div>
 
 <div align="center">
@@ -35,9 +35,9 @@ redistributed).
 </div>
 
 <div align="center">
-  <img src="../../docs/img/commander_mirror.gif" width="680px" alt="Skate Commander v0.8.2: drag-IK and mirror-mode bimanual motion in the workstation while live telemetry plots track it">
+  <img src="../../docs/img/commander_mirror.gif" width="680px" alt="Skate Commander v0.8.3: drag-IK and mirror-mode bimanual motion in the workstation while live telemetry plots track it">
   <br>
-  <em><strong>v0.8.2 cockpit in action</strong> — mirror mode drives both arms from one slider while the live telemetry plots track the motion.</em>
+  <em><strong>v0.8.3 cockpit in action</strong> — mirror mode drives both arms from one slider while the live telemetry plots track the motion.</em>
 </div>
 
 <div align="center">
@@ -47,13 +47,13 @@ redistributed).
     <td width="50%"><img width="100%" src="../../docs/img/cockpit_plots.webp" alt="Live Foxglove-style telemetry strip charts under the 3D view"><br><sub><b>Live telemetry plots</b> — angle / velocity / temperature / TCP / RTT at 30 Hz</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img width="100%" src="../../docs/img/cockpit_v0724_cockpit.webp" alt="The v0.8.2 Isaac-Sim-style cockpit: menu bar, tool rail, 3D twin, STAGE/PROPERTY dock"><br><sub><b>Isaac-Sim-style workstation</b> — menu bar, tool rail, Stage / Property dock, timeline</sub></td>
+    <td width="50%"><img width="100%" src="../../docs/img/cockpit_v0724_cockpit.webp" alt="The v0.8.3 Isaac-Sim-style cockpit: menu bar, tool rail, 3D twin, STAGE/PROPERTY dock"><br><sub><b>Isaac-Sim-style workstation</b> — menu bar, tool rail, Stage / Property dock, timeline</sub></td>
     <td width="50%"><img width="100%" src="../../docs/img/cockpit_ghost.webp" alt="Translucent ghost-robot preview with an Approve / Cancel gate"><br><sub><b>Ghost preview</b> — risky moves wait behind an Approve / Cancel gate</sub></td>
   </tr>
 </table>
 </div>
 
-## Features (v0.8.2)
+## Features (v0.8.3)
 
 The cockpit is structured as a NVIDIA-Isaac-Sim-style workstation: a **menu bar**, a left vertical **tool rail**, a center **3D View**, a right **STAGE** (scene hierarchy) over **PROPERTY** (inspector), and a bottom **TIMELINE / CONSOLE / CONTENT** browser - on a flat, token-driven dark theme.
 
