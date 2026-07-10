@@ -21,9 +21,9 @@ redistributed).
 📖 **Docs & `rbt` API reference → [dsl-robotics.github.io/skatearm/commander.html](https://dsl-robotics.github.io/skatearm/commander.html)**
 
 <div align="center">
-  <img src="../../docs/img/cockpit_v0724_cockpit.webp" width="680px" alt="The Skate Commander cockpit (v0.8.3): an Isaac-Sim-style workstation — menu bar, tool rail, 3D twin, STAGE / PROPERTY dock and live telemetry plots">
+  <img src="../../docs/img/cockpit_v0724_cockpit.webp" width="680px" alt="The Skate Commander cockpit (v0.8.4): an Isaac-Sim-style workstation — menu bar, tool rail, 3D twin, STAGE / PROPERTY dock and live telemetry plots">
   <br>
-  <em><strong>v0.8.3 cockpit</strong> — an Isaac-Sim-style workstation: a menu bar, a left tool rail, the 3D MuJoCo twin, a STAGE / PROPERTY dock and live telemetry plots.</em>
+  <em><strong>v0.8.4 cockpit</strong> — an Isaac-Sim-style workstation: a menu bar, a left tool rail, the 3D MuJoCo twin, a STAGE / PROPERTY dock and live telemetry plots.</em>
 </div>
 
 <div align="center">
@@ -35,9 +35,9 @@ redistributed).
 </div>
 
 <div align="center">
-  <img src="../../docs/img/commander_mirror.gif" width="680px" alt="Skate Commander v0.8.3: drag-IK and mirror-mode bimanual motion in the workstation while live telemetry plots track it">
+  <img src="../../docs/img/commander_mirror.gif" width="680px" alt="Skate Commander v0.8.4: drag-IK and mirror-mode bimanual motion in the workstation while live telemetry plots track it">
   <br>
-  <em><strong>v0.8.3 cockpit in action</strong> — mirror mode drives both arms from one slider while the live telemetry plots track the motion.</em>
+  <em><strong>v0.8.4 cockpit in action</strong> — mirror mode drives both arms from one slider while the live telemetry plots track the motion.</em>
 </div>
 
 <div align="center">
@@ -47,13 +47,24 @@ redistributed).
     <td width="50%"><img width="100%" src="../../docs/img/cockpit_plots.webp" alt="Live Foxglove-style telemetry strip charts under the 3D view"><br><sub><b>Live telemetry plots</b> — angle / velocity / temperature / TCP / RTT at 30 Hz</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img width="100%" src="../../docs/img/cockpit_v0724_cockpit.webp" alt="The v0.8.3 Isaac-Sim-style cockpit: menu bar, tool rail, 3D twin, STAGE/PROPERTY dock"><br><sub><b>Isaac-Sim-style workstation</b> — menu bar, tool rail, Stage / Property dock, timeline</sub></td>
+    <td width="50%"><img width="100%" src="../../docs/img/cockpit_v0724_cockpit.webp" alt="The v0.8.4 Isaac-Sim-style cockpit: menu bar, tool rail, 3D twin, STAGE/PROPERTY dock"><br><sub><b>Isaac-Sim-style workstation</b> — menu bar, tool rail, Stage / Property dock, timeline</sub></td>
     <td width="50%"><img width="100%" src="../../docs/img/cockpit_ghost.webp" alt="Translucent ghost-robot preview with an Approve / Cancel gate"><br><sub><b>Ghost preview</b> — risky moves wait behind an Approve / Cancel gate</sub></td>
   </tr>
 </table>
 </div>
 
-## Features (v0.8.3)
+<div align="center">
+  <table>
+  <tr>
+    <td width="50%"><img width="100%" src="../../docs/img/commander_rerun_robot.webp" alt="The full meshed Skate digital twin rendered solid-shaded in a rerun.io viewer"><br><sub><b>Meshed twin in rerun</b> — every link's real mesh, moved by its live pose</sub></td>
+    <td width="50%"><img width="100%" src="../../docs/img/commander_rerun_workspace.webp" alt="rerun.io workspace: the meshed robot beside per-joint time-series plots and a scrub-able timeline"><br><sub><b>Scrub-able telemetry</b> — 3D twin + per-arm joint / IK / manipulability time-series</sub></td>
+  </tr>
+  </table>
+  <br>
+  <em><strong>Optional rerun.io telemetry (v0.8.4, <code>--rerun</code>)</strong> — the live twin streamed into a <a href="https://rerun.io">rerun</a> viewer beside the browser cockpit: the full meshed robot in 3D plus scrub-able joint / drag-IK / manipulability time-series. Fully opt-in, off by default.</em>
+</div>
+
+## Features (v0.8.4)
 
 The cockpit is structured as a NVIDIA-Isaac-Sim-style workstation: a **menu bar**, a left vertical **tool rail**, a center **3D View**, a right **STAGE** (scene hierarchy) over **PROPERTY** (inspector), and a bottom **TIMELINE / CONSOLE / CONTENT** browser - on a flat, token-driven dark theme.
 

@@ -281,7 +281,7 @@ def make_collision_guard(collision_xml, get_obstacles=None):
 
 
 def build_app(model_dir, real_host="r.local", sim_port=2000,
-              sim_host="127.0.0.1", collision_model=None, ik="dls"):
+              sim_host="127.0.0.1", collision_model=None, ik="dls", rerun=False):
     model_dir = Path(model_dir)
     urdf_path = model_dir / "skt_v3.urdf"
     mesh_dir = model_dir / "skt_v3_meshes" / "scaled_stl_files"
@@ -324,6 +324,16 @@ def build_app(model_dir, real_host="r.local", sim_port=2000,
         except Exception as e:
             print(f"[commander] mink IK unavailable ({type(e).__name__}: {e}); "
                   "falling back to the numpy DLS")
+    rerun_logger = None
+    if rerun and collision_model:
+        try:
+            from .rerun_log import RerunLogger
+            rerun_logger = RerunLogger(collision_model)
+            print("[commander] rerun logging ON — streaming the twin (meshed robot "
+                  "+ time-series) to a rerun viewer")
+        except Exception as e:
+            print(f"[commander] rerun unavailable ({type(e).__name__}: {e}); "
+                  "telemetry logging OFF")
     runner = ProgramRunner(bridge)
     bridge.recorder = PoseRecorder()      # teach-in: observed in tick()
     tools = _load_tools()
@@ -337,6 +347,7 @@ def build_app(model_dir, real_host="r.local", sim_port=2000,
     app.state.tools = tools
     app.state.clients = 0
     app.state.reachmap = {}                 # cached dexterity clouds per arm
+    app.state.rerun = rerun_logger          # optional rerun.io telemetry (opt-in)
 
     def _cam_qpos():
         try:
@@ -742,13 +753,17 @@ def build_app(model_dir, real_host="r.local", sim_port=2000,
         async def loop():
             dt = 1.0 / TX_HZ
             while True:
-                bridge.tick(dt, ui_attached=app.state.clients > 0)
+                snap = bridge.tick(dt, ui_attached=app.state.clients > 0)
+                if app.state.rerun is not None:
+                    app.state.rerun.log(bridge, snap)
                 await asyncio.sleep(dt)
         app.state.tick_task = asyncio.create_task(loop())
 
     @app.on_event("shutdown")
     async def stop_tick():
         app.state.tick_task.cancel()
+        if getattr(app.state, "rerun", None) is not None:
+            app.state.rerun.close()
         bridge.close()
         if getattr(app.state, "camera", None):
             app.state.camera.close()
@@ -981,6 +996,10 @@ def main(argv=None):
                          "'mink' (MuJoCo QP with proactive self-collision "
                          "avoidance; needs the mink package + a collision model, "
                          "auto-falls back to dls). Env: SKATE_IK.")
+    ap.add_argument("--rerun", action="store_true", default=None,
+                    help="stream the live twin (meshed robot + joint/IK time-series) "
+                         "to a rerun.io viewer for debugging; needs rerun-sdk. "
+                         "Env: SKATE_RERUN=1.")
     args = ap.parse_args(argv)
 
     model_dir = Path(args.model_dir) if args.model_dir else _find_model_dir()
@@ -1015,9 +1034,10 @@ def main(argv=None):
     import os
     import uvicorn
     ik = (args.ik or os.environ.get("SKATE_IK", "dls")).lower()
+    use_rerun = bool(args.rerun) or os.environ.get("SKATE_RERUN", "") not in ("", "0", "off", "no", "false")
     app = build_app(str(model_dir), real_host=args.real_host,
                     sim_host=args.sim_host, collision_model=guard,
-                    ik=("mink" if ik == "mink" else "dls"))
+                    ik=("mink" if ik == "mink" else "dls"), rerun=use_rerun)
     url = f"http://{args.host}:{args.port}"
     mode = "REAL" if args.real else "SIM"
     print(f"[commander] {url}  ({mode} — starts dampened, press RESUME in the UI)")
