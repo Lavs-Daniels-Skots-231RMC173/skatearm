@@ -2,12 +2,12 @@
 
 **A two-armed robot you can drive from your browser — a 3D simulation today, built to switch to the real [R.Botic Skate](https://www.rboticlabs.com/shop/p/skate-upper-body-v2) when the hardware arrives.**
 
-*An open bimanual work-cell & tool ecosystem: two-handed assembly with in-cell quality inspection, built sim-first in MuJoCo, then deployed over the robot's native UDP wire — with a **ROS 2 driver and MoveIt 2 motion planning** on top.*
+*An open bimanual work-cell, built sim-first in MuJoCo and driven over the robot's native UDP wire — with a **ROS 2 driver and MoveIt 2 motion planning** on top.*
 
 > **Status — simulation today.** Everything here is sim-validated in MuJoCo; the real Skate is en route, so no real-hardware performance is claimed yet — hardware bring-up is Phase 2.
 
 <div align="center">
-  <a href="https://dsl-robotics.github.io/skatearm/"><img src="docs/img/commander_mirror.gif" width="820" alt="Skate Commander cockpit — drag-IK and mirror-mode bimanual motion in the v0.8 workstation while live telemetry tracks it"></a>
+  <a href="https://dsl-robotics.github.io/skatearm/"><img src="docs/img/commander_mirror.gif" width="820" alt="Skate Commander cockpit — drag-IK and mirror-mode bimanual motion in the v0.8.5 workstation while live telemetry tracks it"></a>
 </div>
 
 <div align="center">
@@ -24,11 +24,12 @@
 
 <div align="center">
 
-**▶ Watch the 3:46 product film** — a full walkthrough of the current v0.8 cockpit: digital twin, drag-IK, RRT collision-routing, mirror mode, dual-arm carry, live telemetry and teach-in.
+**▶ [Drive the twin in your browser — no install needed](https://raw.githack.com/dsl-robotics/skatearm/main/tools/skate_commander/preview.html)**<br>
+*Jog the joints live over a recorded scene — the fastest way to feel the cockpit.*
 
-🌐 **Live demo & write-up → [dsl-robotics.github.io/skatearm](https://dsl-robotics.github.io/skatearm/)**
+Prefer to watch or read? **[3:46 product film](https://dsl-robotics.github.io/skatearm/video/commander_v08_product.mp4)** · **[live demo & full write-up](https://dsl-robotics.github.io/skatearm/)**
 
-🕹 **Drive the twin in your browser — no install → [live preview](https://raw.githack.com/dsl-robotics/skatearm/main/tools/skate_commander/preview.html)** *(jog the joints, sliders & Home are live, over a recorded scene)*
+<sub>Built by a mechatronics student **[open to junior robotics-software roles ↓](#author)**</sub>
 
 </div>
 
@@ -83,7 +84,7 @@ A browser cockpit for the Skate: a 3D digital twin built from the official URDF,
 <div align="center">
   <img width="390" src="docs/img/cockpit_dex.webp" alt="Manipulability dexterity cloud rendered around the robot — warm where dexterous, blue near singular reach">
   <img width="390" src="docs/img/cockpit_plots.webp" alt="Live Foxglove-style telemetry strip charts (angle / velocity / temperature / TCP / RTT at 30 Hz) under the 3D view">
-  <img width="390" src="docs/img/cockpit_v0724_cockpit.webp" alt="The v0.8 cockpit: menu bar, tool rail, 3D twin, STAGE / PROPERTY dock and timeline">
+  <img width="390" src="docs/img/cockpit_v0724_cockpit.webp" alt="The v0.8.5 cockpit: menu bar, tool rail, 3D twin, STAGE / PROPERTY dock and timeline">
   <img width="390" src="docs/img/cockpit_ghost.webp" alt="Translucent ghost-robot preview gated behind Approve / Cancel">
   <br>
   <em><b>Manipulability cloud</b> · <b>live telemetry plots</b> (30 Hz) · the <b>workstation shell</b> (menu bar, tool rail, Stage / Property dock) · <b>ghost-preview</b> Approve / Cancel gate</em>
@@ -102,9 +103,9 @@ Skate Commander integrates best-in-class open-source robotics tools — each **o
 
 | Integration | What it is | Role in the cockpit | Licence | Enable |
 |---|---|---|---|---|
-| **[mink](https://github.com/kevinzakka/mink)** | MuJoCo differential-IK QP solver | Self-collision-avoiding drag-IK backend — glides the arm to a safe standoff from the torso / legs / other arm as a hard constraint (measured **+14 mm** vs −90 mm penetration) | `Apache-2.0` | `--ik mink` |
-| **[rerun.io](https://rerun.io)** | Multimodal 3D + time-series viewer | Scrub-able telemetry beside the browser twin — the full **meshed robot** in 3D plus per-arm joint / drag-IK / manipulability plots | `Apache-2.0 / MIT` | `--rerun` |
-| **[LeRobot](https://huggingface.co/docs/lerobot)** | Hugging Face robot-learning stack & dataset standard | Export teach-in / teleop demos as a **LeRobotDataset v3.0** → train ACT / Diffusion Policy / π0 with zero glue | `Apache-2.0` | `⤓ LeRobot` |
+| **[mink](https://github.com/kevinzakka/mink)** | MuJoCo differential-IK QP solver | Self-collision-avoiding drag-IK backend — keeps a safe standoff from torso / legs / other arm as a hard constraint (**+14 mm** vs −90 mm penetration) | `Apache-2.0` | `--ik mink` |
+| **[rerun.io](https://rerun.io)** | Multimodal 3D + time-series viewer | Scrub-able telemetry beside the twin — the **meshed robot** in 3D plus per-arm joint / IK / manipulability plots | `Apache-2.0 / MIT` | `--rerun` |
+| **[LeRobot](https://huggingface.co/docs/lerobot)** | Hugging Face robot-learning stack & dataset standard | Export teach-in / teleop demos as a **LeRobotDataset v3.0** → train ACT / Diffusion Policy / π0 | `Apache-2.0` | `⤓ LeRobot` |
 
 <div align="center">
   <img src="docs/img/commander_rerun_workspace.webp" width="620" alt="rerun.io telemetry: the meshed Skate twin in 3D beside per-joint / drag-IK / manipulability time-series">
@@ -115,17 +116,22 @@ Skate Commander integrates best-in-class open-source robotics tools — each **o
 <sub>Each lands behind a flag or a button and is documented in the [roadmap](docs/ROADMAP.md); more integrations are on the way.</sub>
 
 <a id="act-pipeline"></a>
-## 🧠 Deep-dive · From cockpit to policy — a full ACT visuomotor pipeline
+## 🧠 Deep-dive · From cockpit to policy — an ACT visuomotor imitation-learning pipeline
 
-> The LeRobot integration taken end-to-end: turn Skate Commander sim-twin demos into a
-> **LeRobotDataset v3.0**, train an **ACT** policy on a single 4 GB laptop GPU, and roll it
-> out **closed-loop** in the MuJoCo twin. The arms reach targets they only ever *see* — the
-> policy is handed pixels + joint angles, never the target coordinates.
+> The LeRobot integration taken end-to-end: a **scripted DLS-IK expert** produces bimanual-reach
+> demos, exported as a **LeRobotDataset v3.0**; an **ACT** policy is then **behaviour-cloned** from
+> them on a single 4 GB laptop GPU and rolled out **closed-loop** in the same MuJoCo twin. At
+> inference it sees only pixels + joint angles — never the target coordinates — so it reaches
+> purely from vision. An imitation-learning *pipeline* run end-to-end on a laptop, not a claim
+> that reaching was discovered from scratch.
 
 <div align="center">
   <img src="docs/img/act/rollout.gif" width="330" alt="Trained ACT policy reaching orange/blue targets in the MuJoCo twin">
   &nbsp;&nbsp;
-  <img src="docs/img/act/accuracy.png" width="470" alt="Rollout accuracy over 16 unseen episodes">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/img/act/accuracy_dark.png">
+    <img src="docs/img/act/accuracy.png" width="470" alt="Rollout accuracy over 16 unseen episodes">
+  </picture>
   <br>
   <sub><b>Left</b> — the trained policy driving both arms to the targets from a single camera. <b>Right</b> — reach error on 16 unseen episodes (mean ≈ 5 cm).</sub>
 </div>
@@ -165,7 +171,10 @@ it loads with `LeRobotDataset(...)` anywhere.
 ### 2 · Training — ACT on a laptop RTX 3050
 
 <div align="center">
-  <img src="docs/img/act/loss_curve.png" width="640" alt="ACT training loss curve — 0.78 to 0.070 over 20k steps">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/img/act/loss_curve_dark.png">
+    <img src="docs/img/act/loss_curve.png" width="640" alt="ACT training loss curve — 0.78 to 0.070 over 20k steps">
+  </picture>
 </div>
 
 | Setting | Value |
@@ -201,7 +210,11 @@ removes the VAE train/inference gap on a small dataset. The whole run sits comfo
 
 Closed loop: each step the policy receives the current camera frame + 14-DoF joint state and
 predicts the next pose; the sim applies it, re-renders, and feeds it back. The arms converge
-on targets whose coordinates the policy is never given — pure visuomotor imitation.
+on targets whose coordinates the policy is never given — pure visuomotor imitation. Evaluation
+is **in-distribution** (same twin and target distribution as training, on held-out target draws),
+so it validates the learned vision→motion mapping — not sim-to-real transfer, which is Phase 2.
+
+<sub>Reported on a single training seed over 16 held-out rollouts — enough to show the mapping holds end-to-end, not a rigorous benchmark; multiple seeds and a state-only baseline are the honest next step.</sub>
 
 ### Reproduce
 
