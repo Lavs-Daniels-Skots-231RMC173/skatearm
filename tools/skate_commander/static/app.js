@@ -610,6 +610,7 @@ function buildProgPanel() {
       <select id="pg-files"></select>
       <button id="pg-load">LOAD</button>
       <select id="pg-examples" title="Load an example program"></select>
+      <button id="pg-lerobot" title="Export recorded REC episodes as a LeRobotDataset v3.0 for ACT / Diffusion Policy / pi0 training">LeRobot</button>
     </div>
     <pre id="pg-log"></pre>`;
   const ta = $("pg-code");
@@ -617,7 +618,7 @@ function buildProgPanel() {
   ta.oninput = () => (progCode = ta.value);
   if (PREVIEW) {
     for (const id of ["pg-run", "pg-step", "pg-stop", "pg-rec", "pg-save",
-                      "pg-load", "pg-examples", "pg-nl", "pg-gen",
+                      "pg-load", "pg-lerobot", "pg-examples", "pg-nl", "pg-gen",
                       "ps-repeat", "ps-while", "ps-if", "ps-wait"]) {
       $(id).disabled = true;
       $(id).title = "preview is a recording — run the local server";
@@ -705,6 +706,33 @@ function buildProgPanel() {
       } else {
         send({ type: "rec_start" });
       }
+    };
+    $("pg-lerobot").onclick = async () => {
+      const log = $("pg-log");
+      let st;
+      try { st = await (await fetch("/api/lerobot/status")).json(); }
+      catch (e) { return; }
+      if (!st || !st.episodes) {
+        log.textContent = "No episodes yet - hit REC, drive the arms, STOP; "
+          + "repeat for a few demos, then export.";
+        return;
+      }
+      const task = prompt("Task label for " + st.episodes
+        + " recorded episode(s):", "teleop");
+      if (task === null) return;
+      const name = prompt("Dataset name (letters / digits / _ -):", "skate_teleop");
+      if (!name) return;
+      log.textContent = "Exporting...";
+      try {
+        const r = await (await fetch("/api/lerobot/export", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ task, name }),
+        })).json();
+        log.textContent = r.ok
+          ? "LeRobot dataset written:\n  " + r.root + "\n  " + r.episodes
+            + " episodes · " + r.frames + " frames · task \"" + r.task + "\""
+          : "Export failed: " + (r.error || "unknown");
+      } catch (e) { log.textContent = "Export failed (server?)."; }
     };
     setupProgAutocomplete(ta);
     const exSel = $("pg-examples");

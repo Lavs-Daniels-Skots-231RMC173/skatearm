@@ -35,6 +35,7 @@ from skate_ros2 import names  # noqa: E402  (path set up by .bridge)
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
 SEQ_DIR = Path(__file__).resolve().parents[1] / "sequences"
 PROG_DIR = Path(__file__).resolve().parents[1] / "programs"
+LEROBOT_DIR = Path(__file__).resolve().parents[1] / "lerobot_datasets"
 TOOLS_FILE = Path(__file__).resolve().parents[1] / "tcp_tools.json"
 
 
@@ -336,6 +337,12 @@ def build_app(model_dir, real_host="r.local", sim_port=2000,
                   "telemetry logging OFF")
     runner = ProgramRunner(bridge)
     bridge.recorder = PoseRecorder()      # teach-in: observed in tick()
+    try:
+        from .lerobot_export import EpisodeRecorder
+        bridge.ds_rec = EpisodeRecorder(fps=30)   # dense LeRobot capture (opt-in export)
+    except Exception as e:
+        print(f"[commander] LeRobot export unavailable ({type(e).__name__}: {e})")
+        bridge.ds_rec = None
     tools = _load_tools()
 
     def save_tools():
@@ -520,6 +527,37 @@ def build_app(model_dir, real_host="r.local", sim_port=2000,
     @app.get("/api/recording")
     async def api_recording():
         return PlainTextResponse(bridge.recorder.result)
+
+    @app.get("/api/lerobot/status")
+    async def api_lerobot_status():
+        r = bridge.ds_rec
+        return JSONResponse(r.status() if r is not None
+                            else {"episodes": 0, "frames": 0, "active": False})
+
+    @app.post("/api/lerobot/export")
+    async def api_lerobot_export(req: Request):
+        r = bridge.ds_rec
+        if r is None:
+            return JSONResponse({"error": "LeRobot export unavailable"}, status_code=503)
+        try:
+            data = await req.json()
+        except Exception:
+            data = {}
+        task = ((data or {}).get("task") or "teleop").strip() or "teleop"
+        name = ((data or {}).get("name") or "skate_teleop").strip()
+        if not _seq_name_ok(name):
+            return JSONResponse({"error": "bad dataset name"}, status_code=400)
+        root = LEROBOT_DIR / name
+        try:
+            import shutil
+            if root.exists():
+                shutil.rmtree(root)
+            r.export(root, task=task)
+            st = r.status()
+            return JSONResponse({"ok": True, "root": str(root), "task": task,
+                                 "episodes": st["episodes"], "frames": st["frames"]})
+        except Exception as e:
+            return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=400)
 
     @app.post("/api/nl")
     async def api_nl(req: Request):
@@ -841,9 +879,16 @@ def handle_command(bridge: RobotBridge, cmd: dict, runner=None, tools=None,
     elif t == "rec_start":
         if bridge.recorder is not None:
             bridge.recorder.start(bridge.targ)
+        if bridge.ds_rec is not None:
+            bridge.ds_rec.start()
     elif t == "rec_stop":
         if bridge.recorder is not None:
             bridge.recorder.stop()
+        if bridge.ds_rec is not None:
+            bridge.ds_rec.stop()
+    elif t == "lerobot_clear":
+        if bridge.ds_rec is not None:
+            bridge.ds_rec.clear()
     elif t == "jog_start":
         bridge.jog_start(int(cmd["idx"]), int(cmd["dir"]))
     elif t == "jog_stop":

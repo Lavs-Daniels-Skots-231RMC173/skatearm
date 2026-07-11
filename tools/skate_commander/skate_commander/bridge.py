@@ -151,6 +151,7 @@ class RobotBridge:
         self.waypoints = []                # list of np[26] (commanded poses)
         self.wp_names = []
         self.recorder = None               # optional teach-in PoseRecorder
+        self.ds_rec = None                 # optional dense LeRobotDataset recorder
         self.seq_active = False           # gliding toward waypoints[seq_idx]
         self.seq_playing = False          # auto-advance through the list
         self.seq_loop = False
@@ -925,6 +926,8 @@ class RobotBridge:
             self._contact_run = 0
             if self.recorder is not None:
                 self.recorder.observe(self.targ, dt)   # teach-in still works
+            if self.ds_rec is not None:
+                self.ds_rec.observe(self.targ, dt)     # dense LeRobot capture
             return self.snapshot(ui_attached)
 
         # contact reflex: while otherwise-live, an unexpected arm-torque spike
@@ -996,6 +999,8 @@ class RobotBridge:
             self._last_tx = time.monotonic()
         if self.recorder is not None:
             self.recorder.observe(self.targ, dt)
+        if self.ds_rec is not None:
+            self.ds_rec.observe(self.targ, dt)
         return self.snapshot(ui_attached)
 
     # -- state for the UI ------------------------------------------------------
