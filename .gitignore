@@ -14,3 +14,6 @@ tools/skate_commander/skate_teleop/
 
 # runtime-saved cockpit data (user sequences, not part of the repo)
 tools/skate_commander/sequences/
+
+# Exported LeRobot datasets (cockpit output, not source)
+lerobot_datasets/

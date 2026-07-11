@@ -89,10 +89,35 @@ A browser cockpit for the Skate: a 3D digital twin built from the official URDF,
   <em><b>Manipulability cloud</b> · <b>live telemetry plots</b> (30 Hz) · the <b>workstation shell</b> (menu bar, tool rail, Stage / Property dock) · <b>ghost-preview</b> Approve / Cancel gate</em>
 </div>
 
+### 🧩 Open-source integrations
+
+<p align="center">
+  <a href="https://github.com/kevinzakka/mink"><img src="https://img.shields.io/badge/drag--IK-mink-2563EB?style=flat-square" alt="mink"></a>
+  <a href="https://rerun.io"><img src="https://img.shields.io/badge/telemetry-rerun.io-2563EB?style=flat-square" alt="rerun.io"></a>
+  <a href="https://huggingface.co/docs/lerobot"><img src="https://img.shields.io/badge/datasets-LeRobot-2563EB?style=flat-square&logo=huggingface&logoColor=white" alt="LeRobot"></a>
+  <img src="https://img.shields.io/badge/licences-Apache%20%2F%20MIT-16a34a?style=flat-square" alt="permissive licences">
+</p>
+
+Skate Commander integrates best-in-class open-source robotics tools — each **opt-in**, **permissively licensed** (so it can actually ship), and **validated in the sim** before it lands. Every one falls back cleanly: a missing optional dependency never disturbs the numpy drag-IK, the browser twin, or the cockpit tick loop.
+
+| Integration | What it is | Role in the cockpit | Licence | Enable |
+|---|---|---|---|---|
+| **[mink](https://github.com/kevinzakka/mink)** | MuJoCo differential-IK QP solver | Self-collision-avoiding drag-IK backend — glides the arm to a safe standoff from the torso / legs / other arm as a hard constraint (measured **+14 mm** vs −90 mm penetration) | `Apache-2.0` | `--ik mink` |
+| **[rerun.io](https://rerun.io)** | Multimodal 3D + time-series viewer | Scrub-able telemetry beside the browser twin — the full **meshed robot** in 3D plus per-arm joint / drag-IK / manipulability plots | `Apache-2.0 / MIT` | `--rerun` |
+| **[LeRobot](https://huggingface.co/docs/lerobot)** | Hugging Face robot-learning stack & dataset standard | Export teach-in / teleop demos as a **LeRobotDataset v3.0** → train ACT / Diffusion Policy / π0 with zero glue | `Apache-2.0` | `⤓ LeRobot` |
+
+<div align="center">
+  <img src="docs/img/commander_rerun_workspace.webp" width="620" alt="rerun.io telemetry: the meshed Skate twin in 3D beside per-joint / drag-IK / manipulability time-series">
+  <br>
+  <sub><b>rerun.io</b> integration — the meshed twin + scrub-able telemetry, live beside the browser cockpit</sub>
+</div>
+
+<sub>Each lands behind a flag or a button and is documented in the [roadmap](docs/ROADMAP.md); more integrations are on the way.</sub>
+
 **The cockpit is a full teleoperation workstation** — drag-IK and mirror-mode bimanual motion, RRT collision-routing, Python + teach-in programs, a Stage / Property shell, live telemetry plots, a TF tree, diagnostics, and scene markers with keep-out obstacles. The full catalogue:
 
-<details>
-<summary><strong>▸ Full cockpit feature catalogue</strong> — motion · programs · vision · safety · observability · scene tools <em>(click to expand)</em></summary>
+<details open>
+<summary><strong>▸ Full cockpit feature catalogue</strong> — motion · programs · vision · safety · observability · scene tools <em>(click to collapse)</em></summary>
 
 ### Motion, IK &amp; manipulability
 
