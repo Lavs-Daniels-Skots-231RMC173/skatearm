@@ -205,6 +205,8 @@ on targets whose coordinates the policy is never given — pure visuomotor imita
 
 ### Reproduce
 
+Full scripts: [`tools/skate_commander/examples/act_reach/`](tools/skate_commander/examples/act_reach/) — run from that directory.
+
 ```bash
 # 1 · generate the dataset from the MuJoCo twin (osmesa offscreen render)
 MUJOCO_GL=osmesa python gen_reach_dataset.py 40 256
@@ -212,13 +214,13 @@ MUJOCO_GL=osmesa python gen_reach_dataset.py 40 256
 # 2 · train ACT on the RTX 3050 (~32 min)
 lerobot-train \
   --dataset.repo_id=skate/reach_act \
-  --dataset.root=lerobot_datasets/reach_act \
+  --dataset.root=../../lerobot_datasets/reach_act \
   --policy.type=act --policy.use_vae=false --policy.device=cuda \
   --batch_size=4 --steps=20000 --save_freq=5000 \
-  --output_dir=act_reach
+  --output_dir=../../act_reach
 
 # 3 · roll the trained policy out closed-loop in the twin
-MUJOCO_GL=osmesa python rollout_act.py act_reach/checkpoints/020000/pretrained_model 6
+MUJOCO_GL=osmesa python rollout_act.py ../../act_reach/checkpoints/020000/pretrained_model 6
 ```
 
 <details>

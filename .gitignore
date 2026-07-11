@@ -17,3 +17,7 @@ tools/skate_commander/sequences/
 
 # Exported LeRobot datasets (cockpit output, not source)
 lerobot_datasets/
+
+# ACT training outputs (checkpoints, large)
+tools/skate_commander/act_reach/
+tools/skate_commander/act_smoke/
