@@ -47,6 +47,20 @@ Prefer to watch or read? **[3:46 product film](https://dsl-robotics.github.io/sk
   Right: <strong>Skate Commander</strong> — mirror-mode bimanual jog, then teach-in: move the arms by hand and the cockpit writes the <code>rbt</code> program itself.</em>
 </div>
 
+## 🤖 Real hardware, in parallel — SO-101 bring-up
+
+> **Why this is here:** SkateArm is deliberately sim-first while the Skate ships — so the eventual sim-to-real isn't a leap of faith, I've been bringing up a **real robot** alongside it.
+
+On a real **SO-101 / SO-ARM101 follower-leader arm pair** I ran the whole physical stack on **native Ubuntu 24.04 · ROS 2 Jazzy · MoveIt · ros2_control · LeRobot**: follower-leader teleop, multi-camera capture, dataset record / replay, and an **ACT policy trained and run online on the physical arm** — then drove the real controllers end-to-end through MoveIt, verifying joint-by-joint that all six commanded channels move the actual arm.
+
+<div align="center">
+  <img src="docs/img/so101_real_vs_model.jpg" width="760" alt="Left: the real SO-101 arm on the bench. Right: the same arm in RViz / MoveIt — the real-pose vs model-pose reconciliation real-hardware work comes down to.">
+  <br>
+  <sub><b>Real arm ↔ RViz / MoveIt model.</b> The honest lesson from real hardware: a green MoveIt state does <b>not</b> mean the arm is calibrated or safe to move — real-pose ↔ model reconciliation is the work in progress, and exactly the sim-to-real gap SkateArm is built to close.</sub>
+</div>
+
+**→ [SO-101 · real-hardware ROS 2 + MoveIt bring-up](https://github.com/Lavs-Daniels-Skots-231RMC173/so101-native-ubuntu-ros2-moveit)** — the full engineering log: bring-up, controller validation, and the calibration / state-mismatch debugging lessons.
+
 ## What are you here for?
 
 | You want to… | Go to |
@@ -506,7 +520,7 @@ Ideas and requests from other Skate owners are welcome — open an issue.
 
 ## 🔗 Related projects
 
-- **[SO-101 · ROS 2 + MoveIt real-hardware bring-up](https://github.com/Lavs-Daniels-Skots-231RMC173/so101-native-ubuntu-ros2-moveit)** — a real SO-101 / SO-ARM101 arm pair brought up on ROS 2 Jazzy + MoveIt + LeRobot (a 2-camera ACT policy trained and published to Hugging Face).
+- **[SO-101 · ROS 2 + MoveIt real-hardware bring-up](https://github.com/Lavs-Daniels-Skots-231RMC173/so101-native-ubuntu-ros2-moveit)** — a real SO-101 / SO-ARM101 arm pair on ROS 2 Jazzy + MoveIt + LeRobot; teleop, dataset record / replay and an ACT policy trained and run online on the physical arm (featured up top).
 - **[Engineering Portfolio](https://github.com/Lavs-Daniels-Skots-231RMC173/engineering-portfolio)** — 11 academic & applied projects: industrial robotics, PLC, embedded systems, metrology, CNC, mechanical design.
 
 ## Author
