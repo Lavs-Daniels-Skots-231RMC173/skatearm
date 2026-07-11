@@ -114,6 +114,135 @@ Skate Commander integrates best-in-class open-source robotics tools — each **o
 
 <sub>Each lands behind a flag or a button and is documented in the [roadmap](docs/ROADMAP.md); more integrations are on the way.</sub>
 
+<a id="act-pipeline"></a>
+## 🧠 Deep-dive · From cockpit to policy — a full ACT visuomotor pipeline
+
+> The LeRobot integration taken end-to-end: turn Skate Commander sim-twin demos into a
+> **LeRobotDataset v3.0**, train an **ACT** policy on a single 4 GB laptop GPU, and roll it
+> out **closed-loop** in the MuJoCo twin. The arms reach targets they only ever *see* — the
+> policy is handed pixels + joint angles, never the target coordinates.
+
+<div align="center">
+  <img src="docs/img/act/rollout.gif" width="330" alt="Trained ACT policy reaching orange/blue targets in the MuJoCo twin">
+  &nbsp;&nbsp;
+  <img src="docs/img/act/accuracy.png" width="470" alt="Rollout accuracy over 16 unseen episodes">
+  <br>
+  <sub><b>Left</b> — the trained policy driving both arms to the targets from a single camera. <b>Right</b> — reach error on 16 unseen episodes (mean ≈ 5 cm).</sub>
+</div>
+
+```mermaid
+flowchart LR
+  A["Skate Commander<br/>sim twin · skt_v3"] -->|"render + DLS-IK teach"| B["LeRobotDataset v3.0<br/>40 episodes · front camera"]
+  B -->|"lerobot-train (ACT)"| C["ACT policy<br/>ResNet18 + Transformer · 52 M"]
+  C -->|"closed-loop rollout"| D["Reaches from pixels<br/>≈ 5 cm mean error"]
+```
+
+### 1 · Dataset — bimanual reach from a front camera
+
+<div align="center">
+  <img src="docs/img/act/dataset_reach.gif" width="330" alt="Dataset: 4 of 40 bimanual reach episodes">
+  &nbsp;
+  <img src="docs/img/act/dataset_grid.png" width="430" alt="Dataset frames: start / mid / reach across episodes">
+</div>
+
+| Field | Value |
+|---|---|
+| Format | **LeRobotDataset v3.0** (mp4 video + parquet) |
+| Episodes / frames | **40 / 1 880** @ 30 fps |
+| Camera | fixed **front** view, 256×256, neutral-gray robot |
+| Targets | **orange** (right hand) + **blue** (left hand) floating handles, randomized in the reachable workspace |
+| `observation.images.front` | RGB video, 256×256 |
+| `observation.state` / `action` | 14-DoF arm pose (rad) / next commanded pose (ALOHA convention) |
+| Task string | `reach the orange (right hand) and blue (left hand) targets` |
+| On disk | ≈ 5 MB |
+
+Every episode both hands glide from the home pose to two random targets via
+damped-least-squares IK — a straight Cartesian line with a smootherstep speed profile.
+**Rejection sampling** keeps only target pairs both hands can reach (< 1.2 cm residual), so
+every demonstration lands cleanly on its marker. Written with the real `lerobot` writer, so
+it loads with `LeRobotDataset(...)` anywhere.
+
+### 2 · Training — ACT on a laptop RTX 3050
+
+<div align="center">
+  <img src="docs/img/act/loss_curve.png" width="640" alt="ACT training loss curve — 0.78 to 0.070 over 20k steps">
+</div>
+
+| Setting | Value |
+|---|---|
+| Policy | **ACT** — ResNet18 vision backbone + Transformer, deterministic (no VAE) |
+| Trainable params | **52 M** |
+| Hardware | **NVIDIA RTX 3050 Laptop · 4 GB** via WSL2 CUDA passthrough |
+| Batch · steps | 4 · **20 000** |
+| Wall-clock | **≈ 32 min** (~10 steps/s) |
+| Peak VRAM | **0.62 GB** |
+| Final L1 loss | **0.070** |
+| Image norm | ImageNet stats via the LeRobot processor pipeline |
+
+Chunked action prediction (`chunk_size = 32`), ImageNet-pretrained backbone, and
+`use_vae = false` — a deterministic policy is the right fit for a deterministic reach and
+removes the VAE train/inference gap on a small dataset. The whole run sits comfortably under
+**1 GB** of VRAM.
+
+### 3 · Rollout — reaching from pixels
+
+<div align="center">
+  <img src="docs/img/act/rollout_strip.png" width="820" alt="Rollout progression from home to reach across four episodes">
+  <br>
+  <sub>Home → reach, four episodes. The policy sees only the camera frame + joint angles.</sub>
+</div>
+
+| Metric (16 unseen episodes) | Value |
+|---|---|
+| Mean reach error — right / left | **5.1 / 5.2 cm** |
+| Median (worst hand per episode) | **6.5 cm** |
+| Both hands within 8 cm | **75 %** |
+| Target marker diameter | 6 cm |
+
+Closed loop: each step the policy receives the current camera frame + 14-DoF joint state and
+predicts the next pose; the sim applies it, re-renders, and feeds it back. The arms converge
+on targets whose coordinates the policy is never given — pure visuomotor imitation.
+
+### Reproduce
+
+```bash
+# 1 · generate the dataset from the MuJoCo twin (osmesa offscreen render)
+MUJOCO_GL=osmesa python gen_reach_dataset.py 40 256
+
+# 2 · train ACT on the RTX 3050 (~32 min)
+lerobot-train \
+  --dataset.repo_id=skate/reach_act \
+  --dataset.root=lerobot_datasets/reach_act \
+  --policy.type=act --policy.use_vae=false --policy.device=cuda \
+  --batch_size=4 --steps=20000 --save_freq=5000 \
+  --output_dir=act_reach
+
+# 3 · roll the trained policy out closed-loop in the twin
+MUJOCO_GL=osmesa python rollout_act.py act_reach/checkpoints/020000/pretrained_model 6
+```
+
+<details>
+<summary><strong>Notes &amp; gotchas</strong> — the non-obvious bits</summary>
+
+<br>
+
+- **Reach toward the robot's real front (+Y).** The arm workspace opens up fully only in
+  front of the chest; reaching behind is cramped and self-occluded. The fixed camera looks at
+  the true front, so both handles always sit *between* camera and torso and stay visible.
+- **Normalization lives in the processors, not the policy.** In `lerobot` 0.6.0 the ACT model
+  has no built-in normalize / unnormalize — inference must be wrapped with
+  `make_pre_post_processors(...)`: `preprocessor(obs) → select_action → postprocessor(action)`.
+  Skip it and the policy silently receives un-normalized inputs and drives the arms to garbage.
+- **VAE off for small data.** With only 40 demos the VAE's latent-conditioned decoder behaves
+  poorly at inference (latent = 0); a deterministic policy trains cleaner and reaches far
+  better.
+- **4 GB is enough.** Batch 4 holds peak VRAM at 0.62 GB; `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`
+  avoids fragmentation stalls on the laptop GPU.
+
+</details>
+
+---
+
 **The cockpit is a full teleoperation workstation** — drag-IK and mirror-mode bimanual motion, RRT collision-routing, Python + teach-in programs, a Stage / Property shell, live telemetry plots, a TF tree, diagnostics, and scene markers with keep-out obstacles. The full catalogue:
 
 <details open>
