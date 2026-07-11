@@ -230,6 +230,8 @@ so it validates the learned vision→motion mapping — not sim-to-real transfer
 
 <sub>Reported on a single training seed over 16 held-out rollouts — enough to show the mapping holds end-to-end, not a rigorous benchmark; multiple seeds and a state-only baseline are the honest next step.</sub>
 
+> 🔍 **How this was actually debugged:** the policy trained to 0.070 loss but first rolled out **0.65 m — worse than home**. The culprit was a silent normalization-contract bug, not the weights. Full story → **[The ACT policy that reached for garbage](docs/deep-dive-act-normalization.md)**.
+
 ### Reproduce
 
 Full scripts: [`tools/skate_commander/examples/act_reach/`](tools/skate_commander/examples/act_reach/) — run from that directory.
