@@ -1,0 +1,20 @@
+# Normalize line endings. Text files are stored as LF in the repo and checked
+# out with the platform's native endings; this ends the CRLF/LF churn on Windows.
+* text=auto
+
+# Binary assets — never touch their bytes.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.pdf  binary
+*.mp4  binary
+*.webm binary
+*.stl  binary
+*.dae  binary
+*.STL  binary
+*.npy  binary
+*.npz  binary
+*.parquet binary
