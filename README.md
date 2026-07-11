@@ -57,7 +57,7 @@
 | Run it yourself | [🚀 Quick start](#-quick-start-simulation) |
 
 <details>
-<summary><strong>New to the jargon?</strong> — a 20-second glossary &nbsp; <kbd>🔽 click to expand</kbd></summary>
+<summary><strong>New to the jargon?</strong> — a 20-second glossary &nbsp; <kbd>👇 click to expand 👇</kbd></summary>
 
 - **MuJoCo** — a physics simulator; the robot "lives" here virtually before any real hardware exists.
 - **ROS 2** — the standard open-source middleware (the robot's "operating system").
@@ -224,7 +224,7 @@ MUJOCO_GL=osmesa python rollout_act.py ../../act_reach/checkpoints/020000/pretra
 ```
 
 <details>
-<summary><strong>Notes &amp; gotchas</strong> — the non-obvious bits &nbsp; <kbd>🔽 click to expand</kbd></summary>
+<summary><strong>Notes &amp; gotchas</strong> — the non-obvious bits &nbsp; <kbd>👇 click to expand 👇</kbd></summary>
 
 <br>
 
@@ -248,7 +248,7 @@ MUJOCO_GL=osmesa python rollout_act.py ../../act_reach/checkpoints/020000/pretra
 **The cockpit is a full teleoperation workstation** — drag-IK and mirror-mode bimanual motion, RRT collision-routing, Python + teach-in programs, a Stage / Property shell, live telemetry plots, a TF tree, diagnostics, and scene markers with keep-out obstacles. The full catalogue:
 
 <details>
-<summary><strong>Full cockpit feature catalogue</strong> — motion · programs · vision · safety · observability · scene tools &nbsp; <kbd>🔽 click to expand</kbd></summary>
+<summary><strong>Full cockpit feature catalogue</strong> — motion · programs · vision · safety · observability · scene tools &nbsp; <kbd>👇 click to expand 👇</kbd></summary>
 
 ### Motion, IK &amp; manipulability
 
