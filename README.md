@@ -2,8 +2,6 @@
 
 **A two-armed robot you can drive from your browser — a 3D simulation today, built to switch to the real [R.Botic Skate](https://www.rboticlabs.com/shop/p/skate-upper-body-v2) when the hardware arrives.**
 
-*An open bimanual work-cell, built sim-first in MuJoCo and driven over the robot's native UDP wire — with a **ROS 2 driver and MoveIt 2 motion planning** on top.*
-
 > **Status — simulation today.** Everything here is sim-validated in MuJoCo; the real Skate is en route, so no real-hardware performance is claimed yet — hardware bring-up is Phase 2.
 
 <div align="center">
@@ -20,14 +18,12 @@
 
 </div>
 
-<div align="center"><sub>CI runs the hardware-free unit tests <strong>and</strong> a second job that builds the <code>skt_v3</code> model and runs the model-gated collision-guard, RRT-planner, IK &amp; URDF tests — so the badge covers the safety-critical paths, not just the wire layer. See <a href="CONTRIBUTING.md#running-the-tests">CONTRIBUTING</a>.</sub></div>
-
 <div align="center">
 
 **▶ [Drive the twin in your browser — no install needed](https://raw.githack.com/dsl-robotics/skatearm/main/tools/skate_commander/preview.html)**<br>
 *Jog the joints live over a recorded scene — the fastest way to feel the cockpit.*
 
-Prefer to watch or read? **[3:46 product film](https://dsl-robotics.github.io/skatearm/video/commander_v08_product.mp4)** · **[live demo & full write-up](https://dsl-robotics.github.io/skatearm/)**
+Prefer to read the full story? **[live demo & full write-up](https://dsl-robotics.github.io/skatearm/)**
 
 <sub>Built by a mechatronics student **[open to junior robotics-software roles ↓](#author)**</sub>
 
