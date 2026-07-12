@@ -215,13 +215,13 @@ removes the VAE train/inference gap on a small dataset. The whole run sits comfo
   <sub>Home → reach, four episodes. The policy sees only the camera frame + joint angles.</sub>
 </div>
 
-| Metric — 3 training seeds × 24 unseen rollouts | ACT policy | No-vision baseline |
-|---|---|---|
-| Mean reach error — right hand | **5.6 ± 0.6 cm** | 19.6 cm |
-| Mean reach error — left hand | **5.2 ± 0.3 cm** | 19.7 cm |
-| Both hands within 8 cm | **69 % ± 9 %** | 0 % |
-| Median worst hand (pooled) | **6.9 cm** | — |
-| Target marker diameter | 6 cm | — |
+| Reach eval — 24 unseen rollouts · identical targets | ACT (vision) | State-only (learned, no camera) | Mean pose (no learning) |
+|---|---|---|---|
+| Mean reach error — right hand | **5.6 ± 0.6 cm** | 13.7 cm | 19.6 cm |
+| Mean reach error — left hand | **5.2 ± 0.3 cm** | 16.5 cm | 19.7 cm |
+| Both hands within 8 cm | **69 % ± 9 %** | 0 % | 0 % |
+| Median worst hand (pooled) | **6.9 cm** | 17.4 cm | — |
+| Target marker diameter | 6 cm | — | — |
 
 Closed loop: each step the policy receives the current camera frame + 14-DoF joint state and
 predicts the next pose; the sim applies it **kinematically** (forward kinematics — the loop is
@@ -231,7 +231,7 @@ the reach *mapping*. Evaluation
 is **in-distribution** (same twin and target distribution as training, on held-out target draws),
 so it validates the learned vision→motion mapping — not sim-to-real transfer, which is Phase 2.
 
-<sub>Reported across **3 independent training seeds** (24 held-out rollouts each; the chart's error bars are the seed-to-seed spread). The **no-vision baseline** — the same arms driven to the dataset's mean pose, ignoring the camera — lands at **~19.7 cm / 0 % success**, so the ~5 cm reach is the policy genuinely reading each random target off the camera, not replaying a fixed trajectory.</sub>
+<sub>ACT numbers span **3 independent training seeds** (24 held-out rollouts each; the chart's error bars are the seed-to-seed spread). Two **no-vision controls** on the same targets bracket it: a fixed **mean pose** and a **learned state-only** policy — a small MLP mapping joint state → next commanded pose, trained on the same demos with no camera. The learned control settles near the workspace centroid, so it beats the fixed pose (**13.7 / 16.5 cm** vs 19.6 / 19.7 cm) — but with no target signal it still never lands (**0 % success**). Vision is what turns ~15 cm into ~5 cm.</sub>
 
 **Does it hold *outside* the training box? No — and here's the honest measurement.**
 Re-running the **same checkpoint** on targets shifted beyond the training reach
@@ -273,7 +273,7 @@ lerobot-train \
 MUJOCO_GL=osmesa python rollout_act.py ../../act_reach/checkpoints/020000/pretrained_model 6
 ```
 
-**Artifacts & eval harness.** The eval that produces the numbers above is in-repo, not just a claim: [`baseline_reach.py`](tools/skate_commander/examples/act_reach/baseline_reach.py) (the no-vision baseline) and [`aggregate_reach.py`](tools/skate_commander/examples/act_reach/aggregate_reach.py) rebuild the mean ± std table and the chart from the per-seed rollouts, and the raw [`eval_data/`](tools/skate_commander/examples/act_reach/eval_data/) (3 seeds + baseline JSON) is committed — so the headline is one command to check. The **40-episode dataset** and **trained checkpoint** (with normalization processors) are also published as release [**⤓ act-reach-v1**](https://github.com/dsl-robotics/skatearm/releases/tag/act-reach-v1). The one non-redistributable piece is the **`skt_v3` model** ([Rbotic/skate_teleop](https://github.com/Rbotic/skate_teleop)), fetched by `sim/make.py --clone`.
+**Artifacts & eval harness.** The eval that produces the numbers above is in-repo, not just a claim: [`baseline_reach.py`](tools/skate_commander/examples/act_reach/baseline_reach.py) (the mean-pose baseline), [`state_baseline_reach.py`](tools/skate_commander/examples/act_reach/state_baseline_reach.py) (the learned state-only baseline) and [`aggregate_reach.py`](tools/skate_commander/examples/act_reach/aggregate_reach.py) rebuild the mean ± std table and the chart from the per-seed rollouts, and the raw [`eval_data/`](tools/skate_commander/examples/act_reach/eval_data/) (3 seeds + baseline JSONs) is committed — so the headline is one command to check. The **40-episode dataset** and **trained checkpoint** (with normalization processors) are also published as release [**⤓ act-reach-v1**](https://github.com/dsl-robotics/skatearm/releases/tag/act-reach-v1). The one non-redistributable piece is the **`skt_v3` model** ([Rbotic/skate_teleop](https://github.com/Rbotic/skate_teleop)), fetched by `sim/make.py --clone`.
 
 <details>
 <summary><strong>Notes &amp; gotchas</strong> — the non-obvious bits &nbsp; <kbd>click to expand</kbd></summary>
