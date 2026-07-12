@@ -252,6 +252,8 @@ lerobot-train \
 MUJOCO_GL=osmesa python rollout_act.py ../../act_reach/checkpoints/020000/pretrained_model 6
 ```
 
+**Artifacts.** The **40-episode dataset** and the **trained ACT checkpoint** (with its LeRobot normalization processors) are published as a release — [**⤓ act-reach-v1**](https://github.com/dsl-robotics/skatearm/releases/tag/act-reach-v1) — so you can retrain from the same data or load the policy directly, no rerun needed. The generation + rollout scripts live in [`examples/act_reach/`](tools/skate_commander/examples/act_reach/). The one non-redistributable piece is the **`skt_v3` model** ([Rbotic/skate_teleop](https://github.com/Rbotic/skate_teleop)), fetched by `sim/make.py --clone`.
+
 <details>
 <summary><strong>Notes &amp; gotchas</strong> — the non-obvious bits &nbsp; <kbd>👇 click to expand 👇</kbd></summary>
 
