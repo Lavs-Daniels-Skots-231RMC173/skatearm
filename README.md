@@ -251,6 +251,27 @@ it**. [`ood_reach.py`](tools/skate_commander/examples/act_reach/ood_reach.py)
 (`MODE=indist|ood`) reproduces both columns from the one checkpoint; raw numbers
 in [`eval_data/ood.json`](tools/skate_commander/examples/act_reach/eval_data/ood.json).
 
+**Does it tolerate a shifted camera and lighting? Mostly — and it fails gracefully.**
+Re-running the **same checkpoint** on the same targets under **domain randomization** —
+camera extrinsics jittered (±12° / ±8%), plus lighting and robot/floor appearance, task
+cues (orange/blue targets) kept fixed:
+
+<div align="center">
+  <img src="docs/img/act/robust_conditions.png" width="640" alt="Three eval conditions: clean, camera-extrinsics jitter, full domain randomization">
+  <br><sub>The three render conditions (episode 0): <b>clean</b> · <b>camera jitter</b> · <b>full DR</b>.</sub>
+</div>
+
+| Same checkpoint · 24 targets | clean | camera jitter | full DR |
+|---|---|---|---|
+| Reach error — right / left | 5.7 / 5.0 cm | 7.2 / 7.4 cm | 7.3 / 7.4 cm |
+| Both hands within 8 cm | 71 % | 38 % | 42 % |
+
+The reach **degrades gracefully — it doesn't collapse** (≈ 7 cm, not the ~16 cm OOD failure):
+a mis-calibrated camera raises the error ~40 % and roughly halves success, but the arms still
+localize. Full DR ≈ camera-only, so the sensitivity is **dominated by camera geometry, not
+lighting/appearance** — a useful sim-to-real signal. [`robust_reach.py`](tools/skate_commander/examples/act_reach/robust_reach.py) (`clean|cam|dr`)
+reproduces it; raw numbers in [`eval_data/robust.json`](tools/skate_commander/examples/act_reach/eval_data/robust.json).
+
 **Does the reach survive real actuator dynamics? Yes.** The rollout above is
 kinematic — each predicted pose is written straight to the joints. Re-running the
 **same checkpoint** but *commanding* every pose through the model's torque-limited
