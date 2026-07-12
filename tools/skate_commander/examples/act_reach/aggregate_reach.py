@@ -90,8 +90,8 @@ def draw(dark):
                          "ytick.color": FG, "axes.facecolor": BG, "figure.facecolor": BG,
                          "savefig.facecolor": BG})
     fig, ax = plt.subplots(figsize=(8.8, 4.6), dpi=150)
-    ax.axhspan(0, 3, color="#16a34a", alpha=0.20 if dark else 0.12, zorder=0)
-    ax.text(1.86, 3.15, "3 cm marker radius", fontsize=7.5, color=FG, alpha=0.75, ha="right", va="bottom")
+    ax.axhspan(0, 6, color="#16a34a", alpha=0.20 if dark else 0.12, zorder=0)
+    ax.text(1.86, 6.15, "6 cm marker radius", fontsize=7.5, color=FG, alpha=0.75, ha="right", va="bottom")
     ax.axhline(8, color=FG, ls=":", lw=1.1, alpha=0.55)
     ax.text(1.86, 8.25, "8 cm success threshold", fontsize=8, color=FG, alpha=0.75, ha="right")
     x = np.array([0.0, 1.35])

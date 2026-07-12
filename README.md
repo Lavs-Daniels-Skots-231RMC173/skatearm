@@ -221,7 +221,7 @@ removes the VAE train/inference gap on a small dataset. The whole run sits comfo
 | Mean reach error — left hand | **5.2 ± 0.3 cm** | 16.5 cm | 19.7 cm |
 | Both hands within 8 cm | **69 % ± 9 %** | 0 % | 0 % |
 | Median worst hand (pooled) | **6.9 cm** | 17.4 cm | — |
-| Target marker diameter | 6 cm | — | — |
+| Target marker diameter | 12 cm | — | — |
 
 Closed loop: each step the policy receives the current camera frame + 14-DoF joint state and
 predicts the next pose; the sim applies it **kinematically** (forward kinematics — the loop is
@@ -235,7 +235,7 @@ so it validates the learned vision→motion mapping — not sim-to-real transfer
 
 **Does it hold *outside* the training box? No — and here's the honest measurement.**
 Re-running the **same checkpoint** on targets shifted beyond the training reach
-volume (further forward and out) — but all still IK-reachable to **<1 cm** — the
+volume (further forward and out) — but all still IK-reachable to **<2 cm** — the
 reach collapses:
 
 | Same checkpoint · 24 rollouts | In-distribution | Out-of-distribution |
@@ -271,7 +271,7 @@ position servos and integrating full rigid-body dynamics under gravity
 
 The servos track each command to **~2° (0.034 rad)** and every episode stays stable, so
 the kinematic number wasn't hiding a dynamics cliff — the commanded poses are physically
-realizable. [`dynamic_reach.py`](tools/skate_commander/examples/act_reach/dynamic_reach.py)
+realizable. (The kinematic column is the single published checkpoint on these targets — 67%, just under the 3-seed 69% ± 9% headline; the small dynamic edge is servo settling smoothing the motion plus 24-rollout noise, not a real gain.) [`dynamic_reach.py`](tools/skate_commander/examples/act_reach/dynamic_reach.py)
 reproduces it; raw numbers in [`eval_data/dynamic.json`](tools/skate_commander/examples/act_reach/eval_data/dynamic.json).
 Contacts are disabled in the control scene (the raw meshes self-jam at the shoulders), so
 this adds gravity, inertia and torque limits — not self-collision.
