@@ -251,6 +251,31 @@ it**. [`ood_reach.py`](tools/skate_commander/examples/act_reach/ood_reach.py)
 (`MODE=indist|ood`) reproduces both columns from the one checkpoint; raw numbers
 in [`eval_data/ood.json`](tools/skate_commander/examples/act_reach/eval_data/ood.json).
 
+**Does the reach survive real actuator dynamics? Yes.** The rollout above is
+kinematic — each predicted pose is written straight to the joints. Re-running the
+**same checkpoint** but *commanding* every pose through the model's torque-limited
+position servos and integrating full rigid-body dynamics under gravity
+(`mj_step`), the reach holds:
+
+| Same checkpoint · 24 rollouts | Kinematic (teleport) | Dynamic (servos + mj_step) |
+|---|---|---|
+| Reach error — right / left | 5.6 / 5.2 cm | 5.2 / 4.6 cm |
+| Both hands within 8 cm | 67 % | 88 % |
+| Unstable / diverged | — | 0 / 24 |
+
+<div align="center">
+  <img src="docs/img/act/dynamic_rollout.gif" width="340" alt="The trained ACT policy reaching under full mj_step dynamics: each pose driven through torque-limited position servos under gravity">
+  <br>
+  <sub>Same policy, driven through the position servos under gravity (<code>mj_step</code>) rather than teleported — four episodes.</sub>
+</div>
+
+The servos track each command to **~2° (0.034 rad)** and every episode stays stable, so
+the kinematic number wasn't hiding a dynamics cliff — the commanded poses are physically
+realizable. [`dynamic_reach.py`](tools/skate_commander/examples/act_reach/dynamic_reach.py)
+reproduces it; raw numbers in [`eval_data/dynamic.json`](tools/skate_commander/examples/act_reach/eval_data/dynamic.json).
+Contacts are disabled in the control scene (the raw meshes self-jam at the shoulders), so
+this adds gravity, inertia and torque limits — not self-collision.
+
 > **How this was actually debugged:** the policy trained to 0.070 loss but first rolled out **0.65 m — worse than home**. The culprit was a silent normalization-contract bug, not the weights. Full story → **[The ACT policy that reached for garbage](docs/deep-dive-act-normalization.md)**.
 
 ### Reproduce
