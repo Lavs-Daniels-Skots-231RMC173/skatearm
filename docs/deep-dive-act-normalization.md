@@ -92,10 +92,10 @@ The entire bug was the missing `pre(...)` and `post(...)`.
 
 ## Result
 
-| Rollout (16 unseen episodes) | Before | After |
+| Rollout | Before the fix | After the fix (3 seeds) |
 |---|---|---|
-| Mean reach error (right / left) | ~0.65 m | **5.1 / 5.2 cm** |
-| Both hands within 8 cm | 0 % | **75 %** |
+| Mean reach error (right / left) | ~0.65 m | **~5.6 / 5.2 cm** |
+| Both hands within 8 cm | 0 % | **~69 %** |
 
 Same weights, same checkpoint. The only change was calling the policy through the processors it was
 trained with.
