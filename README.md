@@ -224,8 +224,10 @@ removes the VAE train/inference gap on a small dataset. The whole run sits comfo
 | Target marker diameter | 6 cm | — |
 
 Closed loop: each step the policy receives the current camera frame + 14-DoF joint state and
-predicts the next pose; the sim applies it, re-renders, and feeds it back. The arms converge
-on targets whose coordinates the policy is never given — pure visuomotor imitation. Evaluation
+predicts the next pose; the sim applies it **kinematically** (forward kinematics — the loop is
+closed on vision, not on actuator dynamics or contact), re-renders, and feeds it back. The arms
+converge on targets whose coordinates the policy is never given — a pure visuomotor imitation of
+the reach *mapping*. Evaluation
 is **in-distribution** (same twin and target distribution as training, on held-out target draws),
 so it validates the learned vision→motion mapping — not sim-to-real transfer, which is Phase 2.
 
@@ -253,7 +255,7 @@ lerobot-train \
 MUJOCO_GL=osmesa python rollout_act.py ../../act_reach/checkpoints/020000/pretrained_model 6
 ```
 
-**Artifacts.** The **40-episode dataset** and the **trained ACT checkpoint** (with its LeRobot normalization processors) are published as a release — [**⤓ act-reach-v1**](https://github.com/dsl-robotics/skatearm/releases/tag/act-reach-v1) — so you can retrain from the same data or load the policy directly, no rerun needed. The generation + rollout scripts live in [`examples/act_reach/`](tools/skate_commander/examples/act_reach/). The one non-redistributable piece is the **`skt_v3` model** ([Rbotic/skate_teleop](https://github.com/Rbotic/skate_teleop)), fetched by `sim/make.py --clone`.
+**Artifacts & eval harness.** The eval that produces the numbers above is in-repo, not just a claim: [`baseline_reach.py`](tools/skate_commander/examples/act_reach/baseline_reach.py) (the no-vision baseline) and [`aggregate_reach.py`](tools/skate_commander/examples/act_reach/aggregate_reach.py) rebuild the mean ± std table and the chart from the per-seed rollouts, and the raw [`eval_data/`](tools/skate_commander/examples/act_reach/eval_data/) (3 seeds + baseline JSON) is committed — so the headline is one command to check. The **40-episode dataset** and **trained checkpoint** (with normalization processors) are also published as release [**⤓ act-reach-v1**](https://github.com/dsl-robotics/skatearm/releases/tag/act-reach-v1). The one non-redistributable piece is the **`skt_v3` model** ([Rbotic/skate_teleop](https://github.com/Rbotic/skate_teleop)), fetched by `sim/make.py --clone`.
 
 <details>
 <summary><strong>Notes &amp; gotchas</strong> — the non-obvious bits &nbsp; <kbd>👇 click to expand 👇</kbd></summary>
