@@ -274,7 +274,7 @@ MUJOCO_GL=osmesa python rollout_act.py ../../act_reach/checkpoints/020000/pretra
 
 ---
 
-**The cockpit is a full teleoperation workstation** — drag-IK and mirror-mode bimanual motion, RRT collision-routing, Python + teach-in programs, a Stage / Property shell, live telemetry plots, a TF tree, diagnostics, and scene markers with keep-out obstacles. The full catalogue:
+**The cockpit is a full teleoperation workstation** — drag-IK and mirror-mode bimanual motion, RRT-Connect collision-routing, Python + teach-in programs, a Stage / Property shell, live telemetry plots, a TF tree, diagnostics, and scene markers with keep-out obstacles. The full catalogue:
 
 <details>
 <summary><strong>Full cockpit feature catalogue</strong> — motion · programs · vision · safety · observability · scene tools &nbsp; <kbd>👇 click to expand 👇</kbd></summary>
@@ -327,7 +327,7 @@ MUJOCO_GL=osmesa python rollout_act.py ../../act_reach/checkpoints/020000/pretra
 |---|---|
 | Collision guard | Every target checked for self-collision *before* it is sent — including along interpolated paths; capsule / box collision model |
 | Contact reflex | A torque spike on a *stalled* arm joint (loaded but not moving — i.e. pushing into something) latches a soft-stop; clear it from the **CONTACT** chip |
-| Planned routing | When a straight move (**Home** or a **waypoint** goto/play) would clip a self-collision, an RRT planner routes the arms *around* it (collision-free) instead of stalling — the legs / balance chain are left untouched |
+| Planned routing | When a straight move (**Home** or a **waypoint** goto/play) would clip a self-collision, an **RRT-Connect** planner (bidirectional RRT) routes the arms *around* it (collision-free) instead of stalling — the legs / balance chain are left untouched |
 | SIM / REAL toggle | Same protocol either way; switching always re-latches the E-STOP |
 
 ### Observability &amp; operator tools
@@ -359,7 +359,7 @@ MUJOCO_GL=osmesa python rollout_act.py ../../act_reach/checkpoints/020000/pretra
 | Stage hierarchy &amp; inspector | An Isaac-Sim-style **STAGE** tree (World ▸ Skate ▸ arms ▸ joints + overlays / grid) with visibility eyes; click any node for a live **PROPERTY** inspector (name, type, world pose) |
 | Viewport display settings | A gear popover toggles grid / axes, sets camera FOV, swaps the background, and flips render quality |
 | Scene markers | Spawn a target in reachable space and drag its X/Y/Z gizmo; each marker shows live **reachability** (green / red), one-click **→L / →R** go-to (server-side IK), **→P** to append `rbt.moveto(…)` to a program, and **⇄ both** for a simultaneous **bimanual reach** |
-| Virtual obstacles | Spawn keep-out boxes and place them freely with a 3D gizmo, sized to any W×D×H — the RRT planner and the collision guard route the arms *around* them |
+| Virtual obstacles | Spawn keep-out boxes and place them freely with a 3D gizmo, sized to any W×D×H — the RRT-Connect planner and the collision guard route the arms *around* them |
 | Planning preview | Before a **Home** or **waypoint** move, a translucent **ghost robot** shows the destination pose and a blue trail shows the planned collision-free **route**, gated behind **Approve / Cancel** |
 | Save / load scene | Save the placed markers + obstacles to a JSON scene file and reload them later |
 
@@ -419,10 +419,10 @@ Full docs + a **Windows/WSL2 setup guide** are in [`tools/skate_ros2/`](tools/sk
 
 ## 🏭 Autonomous work-cell (Phase 1 — complete)
 
-The demonstrator task, end to end in simulation: the left arm fixtures a base part in the air, the right arm aligns a peg by relative servoing and inserts it with a force-guarded descent. A GRAFCET sequencer (the IEC step-sequencer standard used in industrial soft-PLCs) runs the full cycle on sensor-based transitions — no timers — and two fixed cameras with classical CV deliver the accept/reject verdict that drives it. Every transition is logged to JSON and fed into a Flask + SQLite SCADA dashboard.
+The demonstrator task, end to end in simulation: the left arm fixtures a base part in the air, the right arm aligns a peg by relative servoing and inserts it with a **torque-guarded** descent — a joint-torque (τ) watchdog in the sim, not a wrist force/torque sensor. A GRAFCET sequencer (the IEC step-sequencer standard used in industrial soft-PLCs) runs the full cycle on sensor-based transitions — no timers — and two fixed cameras with classical CV deliver the accept/reject verdict that drives it. Every transition is logged to JSON and fed into a Flask + SQLite SCADA dashboard.
 
 <div align="center">
-  <img src="docs/img/cell_assemble_demo.gif" width="420px" alt="Bimanual assembly: left arm fixtures the base, right arm inserts the peg with a force-guarded descent">
+  <img src="docs/img/cell_assemble_demo.gif" width="420px" alt="Bimanual assembly: left arm fixtures the base, right arm inserts the peg with a torque-guarded descent">
   <img src="docs/img/14_qc_top_annotated.png" width="420px" alt="Overhead QC camera view, annotated: inspection window, pocket-rim reference, measured alignment">
   <br>
   <em>Left: the bimanual insert (τ-watchdog guarded, depth 18.5 mm, peg tilt ≤ 2°). Right: the overhead QC camera's annotated verdict.
@@ -440,7 +440,7 @@ Dashboard live previews: **[overview](https://raw.githack.com/dsl-robotics/skate
 
 ## 🦾 Sim foundations (Phase 0)
 
-The converted official `skt_v3` model ships with no actuators — [sim/make_control_model.py](sim/make_control_model.py) adds 26 position servos and holds poses under physics with < 0.03 rad error; [sim/make_collision_model.py](sim/make_collision_model.py) replaces the jamming raw meshes with auto-fitted collision capsules (boxes via `--boxes`), so self-collision actually works. Joint/torque sensors and end-effector sites seed the telemetry schema ([tracking plot](docs/img/sensor_tracking.png)). Honest limitations documented in [sim/README.md](sim/README.md).
+The converted official `skt_v3` model ships with no actuators — [sim/make_control_model.py](sim/make_control_model.py) adds 26 position servos — the twin's full joint set: two 8-DoF arms (the Skate's headline **16 DoF**), an 8-DoF torso column and a 2-DoF head — and holds poses under physics with < 0.03 rad error; [sim/make_collision_model.py](sim/make_collision_model.py) replaces the jamming raw meshes with auto-fitted collision capsules (boxes via `--boxes`), so self-collision actually works. Joint/torque sensors and end-effector sites seed the telemetry schema ([tracking plot](docs/img/sensor_tracking.png)). Honest limitations documented in [sim/README.md](sim/README.md).
 
 <div align="center">
   <img src="docs/img/control_demo.gif" width="360px" alt="Closed-loop control demo: independent arm trajectories under physics">
@@ -506,7 +506,7 @@ Tools get built because SkateArm needs them — then released standalone:
 | [`skate_ros2`](tools/skate_ros2/) | ROS 2 bridge over Skate's native UDP + protocol-true MuJoCo sim endpoint | ✅ **shipped** (sim-verified) |
 | [`skate_moveit_config`](tools/skate_moveit_config/) | MoveIt 2 config for the bimanual chains — SRDF generated from the URDF, OMPL planning, and a FollowJointTrajectory bridge to the UDP driver | ✅ **built & end-to-end-verified on ROS 2 Jazzy** (colcon + move_group + MoveItPy plans **and executes → sim moves**) |
 | [`skate_ros2_control`](tools/skate_ros2_control/) | **ros2_control** hardware interface — a C++ `SystemInterface` bridging `controller_manager` to the driver (inheriting its deadman / e-stop safety) + per-arm `JointTrajectoryController`s whose names match the MoveIt config | ✅ **verified on ROS 2 Jazzy** (JTC goal + a 15-waypoint MoveItPy plan execute **through the controllers**, no Python bridge) |
-| [`skate_commander`](tools/skate_commander/) | Web cockpit — browser digital twin with drag-IK, mirror-mode bimanual motion, RRT collision-routing, an **optional mink IK backend** (`--ik mink`) with proactive self-collision avoidance, **optional rerun.io telemetry** (`--rerun` — a meshed digital twin + scrub-able time-series in a rerun viewer), Python + teach-in programs, **optional LeRobot v3.0 dataset export** (`⤓ LeRobot` — teach-in demos → ACT / Diffusion Policy training data), an application shell, live telemetry and scene/obstacle tools (full list in the [feature catalogue](#-skate-commander--web-cockpit) above) · OBSERVE mode — watch a ROS 2 / MoveIt execution live in the twin · sim-validated camera tools parked pending a real depth sensor · [live preview](https://raw.githack.com/dsl-robotics/skatearm/main/tools/skate_commander/preview.html) | ✅ **v0.8.5** (real-camera passthrough waits for hardware) |
+| [`skate_commander`](tools/skate_commander/) | Web cockpit — browser digital twin with drag-IK, mirror-mode bimanual motion, RRT-Connect collision-routing, an **optional mink IK backend** (`--ik mink`) with proactive self-collision avoidance, **optional rerun.io telemetry** (`--rerun` — a meshed digital twin + scrub-able time-series in a rerun viewer), Python + teach-in programs, **optional LeRobot v3.0 dataset export** (`⤓ LeRobot` — teach-in demos → ACT / Diffusion Policy training data), an application shell, live telemetry and scene/obstacle tools (full list in the [feature catalogue](#-skate-commander--web-cockpit) above) · OBSERVE mode — watch a ROS 2 / MoveIt execution live in the twin · sim-validated camera tools parked pending a real depth sensor · [live preview](https://raw.githack.com/dsl-robotics/skatearm/main/tools/skate_commander/preview.html) | ✅ **v0.8.5** (real-camera passthrough waits for hardware) |
 | Control-ready MJCF | skt_v3 with actuators, ready for control work | ✅ first version in [sim/](sim/) |
 | Teleop dataset hub | Bimanual datasets in LeRobot format | planned |
 | [MuJoCo benchmark suite](sim/benchmark.py) | Repeatable bimanual tasks — reach · carry · peg-insert — with quantitative metrics, headless &amp; seeded | ✅ **first version in [sim/](sim/)** |
