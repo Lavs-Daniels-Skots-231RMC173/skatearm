@@ -144,10 +144,10 @@ Skate Commander integrates best-in-class open-source robotics tools — each **o
   &nbsp;&nbsp;
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/img/act/accuracy_dark.png">
-    <img src="docs/img/act/accuracy.png" width="470" alt="Rollout accuracy over 16 unseen episodes">
+    <img src="docs/img/act/accuracy.png" width="470" alt="ACT reach error vs a no-vision baseline across 3 training seeds">
   </picture>
   <br>
-  <sub><b>Left</b> — the trained policy driving both arms to the targets from a single camera. <b>Right</b> — reach error on 16 unseen episodes (mean ≈ 5 cm).</sub>
+  <sub><b>Left</b> — the trained policy driving both arms to the targets from a single camera. <b>Right</b> — reach error across 3 training seeds vs a no-vision baseline (vision cuts the error ~3.5×).</sub>
 </div>
 
 ```mermaid
@@ -215,12 +215,13 @@ removes the VAE train/inference gap on a small dataset. The whole run sits comfo
   <sub>Home → reach, four episodes. The policy sees only the camera frame + joint angles.</sub>
 </div>
 
-| Metric (16 unseen episodes) | Value |
-|---|---|
-| Mean reach error — right / left | **5.1 / 5.2 cm** |
-| Median (worst hand per episode) | **6.5 cm** |
-| Both hands within 8 cm | **75 %** |
-| Target marker diameter | 6 cm |
+| Metric — 3 training seeds × 24 unseen rollouts | ACT policy | No-vision baseline |
+|---|---|---|
+| Mean reach error — right hand | **5.6 ± 0.6 cm** | 19.6 cm |
+| Mean reach error — left hand | **5.2 ± 0.3 cm** | 19.7 cm |
+| Both hands within 8 cm | **69 % ± 9 %** | 0 % |
+| Median worst hand (pooled) | **6.9 cm** | — |
+| Target marker diameter | 6 cm | — |
 
 Closed loop: each step the policy receives the current camera frame + 14-DoF joint state and
 predicts the next pose; the sim applies it, re-renders, and feeds it back. The arms converge
@@ -228,7 +229,7 @@ on targets whose coordinates the policy is never given — pure visuomotor imita
 is **in-distribution** (same twin and target distribution as training, on held-out target draws),
 so it validates the learned vision→motion mapping — not sim-to-real transfer, which is Phase 2.
 
-<sub>Reported on a single training seed over 16 held-out rollouts — enough to show the mapping holds end-to-end, not a rigorous benchmark; multiple seeds and a state-only baseline are the honest next step.</sub>
+<sub>Reported across **3 independent training seeds** (24 held-out rollouts each; the chart's error bars are the seed-to-seed spread). The **no-vision baseline** — the same arms driven to the dataset's mean pose, ignoring the camera — lands at **~19.7 cm / 0 % success**, so the ~5 cm reach is the policy genuinely reading each random target off the camera, not replaying a fixed trajectory.</sub>
 
 > 🔍 **How this was actually debugged:** the policy trained to 0.070 loss but first rolled out **0.65 m — worse than home**. The culprit was a silent normalization-contract bug, not the weights. Full story → **[The ACT policy that reached for garbage](docs/deep-dive-act-normalization.md)**.
 
