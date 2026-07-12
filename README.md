@@ -147,7 +147,7 @@ Skate Commander integrates best-in-class open-source robotics tools — each **o
     <img src="docs/img/act/accuracy.png" width="470" alt="ACT reach error vs a no-vision baseline across 3 training seeds">
   </picture>
   <br>
-  <sub><b>Left</b> — the trained policy driving both arms to the targets from a single camera. <b>Right</b> — reach error across 3 training seeds vs a no-vision baseline (vision cuts the error ~3.5×).</sub>
+  <sub><b>Left</b> — the trained policy driving both arms to the targets from a single camera. <b>Right</b> — reach error vs two no-vision baselines (a learned state-only policy and a fixed mean pose); only vision clears the 8 cm success line.</sub>
 </div>
 
 ```mermaid
