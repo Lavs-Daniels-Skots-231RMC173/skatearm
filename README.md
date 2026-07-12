@@ -233,6 +233,24 @@ so it validates the learned vision→motion mapping — not sim-to-real transfer
 
 <sub>Reported across **3 independent training seeds** (24 held-out rollouts each; the chart's error bars are the seed-to-seed spread). The **no-vision baseline** — the same arms driven to the dataset's mean pose, ignoring the camera — lands at **~19.7 cm / 0 % success**, so the ~5 cm reach is the policy genuinely reading each random target off the camera, not replaying a fixed trajectory.</sub>
 
+**Does it hold *outside* the training box? No — and here's the honest measurement.**
+Re-running the **same checkpoint** on targets shifted beyond the training reach
+volume (further forward and out) — but all still IK-reachable to **<1 cm** — the
+reach collapses:
+
+| Same checkpoint · 24 rollouts | In-distribution | Out-of-distribution |
+|---|---|---|
+| Reach error — right / left | **5.6 / 5.2 cm** | 16.8 / 12.9 cm |
+| Both hands within 8 cm | **67 %** | **0 %** |
+| Targets IK-reachable < 2 cm | 100 % | 100 % |
+
+Every out-of-distribution target was physically reachable (mean IK residual 7 mm),
+so this is a real generalization gap, not an artifact: the learned vision→motion
+map **interpolates inside its training reach volume and does not extrapolate past
+it**. [`ood_reach.py`](tools/skate_commander/examples/act_reach/ood_reach.py)
+(`MODE=indist|ood`) reproduces both columns from the one checkpoint; raw numbers
+in [`eval_data/ood.json`](tools/skate_commander/examples/act_reach/eval_data/ood.json).
+
 > 🔍 **How this was actually debugged:** the policy trained to 0.070 loss but first rolled out **0.65 m — worse than home**. The culprit was a silent normalization-contract bug, not the weights. Full story → **[The ACT policy that reached for garbage](docs/deep-dive-act-normalization.md)**.
 
 ### Reproduce
