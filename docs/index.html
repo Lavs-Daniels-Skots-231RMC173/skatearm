@@ -245,6 +245,7 @@
       <a class="hidem" href="#cockpit">Cockpit</a>
       <a class="hidem" href="#capabilities">Capabilities</a>
       <a class="hidem" href="#examples">Examples</a>
+      <a class="hidem" href="#policy">Policy</a>
       <a class="hidem" href="#how">How it works</a>
       <a href="commander.html">Docs</a>
       <a class="nav-cta ghost" href="https://github.com/dsl-robotics/skatearm" target="_blank" rel="noopener"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.7-.01-1.36-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 014 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
@@ -450,6 +451,40 @@
         </div>
       </div>
       <div class="frame"><div class="bar"><i></i><i></i><i></i><span class="tag">bimanual work-cell &middot; twin</span></div><video autoplay loop muted playsinline preload="none" poster="img/cell_demo_poster.webp" aria-label="The cockpit driving a bimanual scene: two arms manipulating parts on the work surface"><source src="img/cell_demo.mp4" type="video/mp4"></video></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="policy" style="border-top:1px solid var(--line);">
+  <div class="wrap">
+    <div class="shead reveal">
+      <span class="wm" aria-hidden="true">POLICY</span>
+      <span class="eyebrow">Learning &middot; imitation</span>
+      <h2>From cockpit to a trained policy.</h2>
+      <p class="lead">The same twin you drive also generates training data. A scripted expert demonstrates bimanual reaches; an <b>ACT</b> policy is behaviour-cloned from them and drives both arms <b>from pixels alone</b> &mdash; end to end on a single 4&nbsp;GB laptop GPU.</p>
+    </div>
+    <div class="cock reveal">
+      <div>
+        <ul class="pts">
+          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4"/></svg><span>A scripted DLS-IK expert glides both arms to random targets, exported as a <b>LeRobotDataset&nbsp;v3.0</b> (40 episodes).</span></li>
+          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4"/></svg><span>An <b>ACT</b> policy (ResNet-18 + Transformer, 52&nbsp;M params) is behaviour-cloned from the demos &mdash; trained in ~32&nbsp;min on a laptop RTX&nbsp;3050.</span></li>
+          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4"/></svg><span>Rolled out closed-loop, it reaches targets it only ever <i>sees</i> &mdash; handed the camera frame + joint angles, never the coordinates.</span></li>
+          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4"/></svg><span>Honest scope: in-distribution eval, single seed &mdash; a working <i>pipeline</i> end to end, not a benchmark.</span></li>
+        </ul>
+        <div class="nums" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:22px;">
+          <div style="border:1px solid var(--line);border-radius:10px;padding:11px 15px;background:rgba(30,34,42,.4);"><b style="display:block;font:700 19px var(--mono);font-variant-numeric:tabular-nums;color:#fff;">~5 cm</b><span style="font:500 12px var(--mono);color:var(--faint);">mean reach error</span></div>
+          <div style="border:1px solid var(--line);border-radius:10px;padding:11px 15px;background:rgba(30,34,42,.4);"><b style="display:block;font:700 19px var(--mono);font-variant-numeric:tabular-nums;color:#fff;">52 M</b><span style="font:500 12px var(--mono);color:var(--faint);">trainable params</span></div>
+          <div style="border:1px solid var(--line);border-radius:10px;padding:11px 15px;background:rgba(30,34,42,.4);"><b style="display:block;font:700 19px var(--mono);font-variant-numeric:tabular-nums;color:#fff;">~32 min</b><span style="font:500 12px var(--mono);color:var(--faint);">on an RTX 3050</span></div>
+        </div>
+        <div class="ctas" style="margin-top:24px;">
+          <a class="btn ghost" href="https://github.com/dsl-robotics/skatearm/blob/main/docs/deep-dive-act-normalization.md" target="_blank" rel="noopener">Read the debugging deep-dive</a>
+          <a class="btn ghost" href="https://github.com/dsl-robotics/skatearm/releases/tag/act-reach-v1" target="_blank" rel="noopener">Dataset + checkpoint</a>
+        </div>
+      </div>
+      <div class="frame">
+        <div class="bar"><i></i><i></i><i></i><span class="tag">ACT rollout &middot; reaching from pixels</span></div>
+        <img src="img/act/rollout.gif" loading="lazy" alt="A trained ACT policy driving both arms to orange and blue targets in the MuJoCo twin from the camera view alone">
+      </div>
     </div>
   </div>
 </section>
