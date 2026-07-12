@@ -161,6 +161,9 @@ flowchart LR
   <img src="docs/img/act/dataset_grid.png" width="430" alt="Dataset frames: start / mid / reach across episodes">
 </div>
 
+<details>
+<summary><strong>Dataset spec</strong> — fields, sizes, task string</summary>
+
 | Field | Value |
 |---|---|
 | Format | **LeRobotDataset v3.0** (mp4 video + parquet) |
@@ -171,6 +174,8 @@ flowchart LR
 | `observation.state` / `action` | 14-DoF arm pose (rad) / next commanded pose (ALOHA convention) |
 | Task string | `reach the orange (right hand) and blue (left hand) targets` |
 | On disk | ≈ 5 MB |
+
+</details>
 
 Every episode both hands glide from the home pose to two random targets via
 damped-least-squares IK — a straight Cartesian line with a smootherstep speed profile.
@@ -187,6 +192,9 @@ it loads with `LeRobotDataset(...)` anywhere.
   </picture>
 </div>
 
+<details>
+<summary><strong>Training config</strong> — model, hardware, hyperparameters</summary>
+
 | Setting | Value |
 |---|---|
 | Policy | **ACT** — ResNet18 vision backbone + Transformer, deterministic (no VAE) |
@@ -197,6 +205,8 @@ it loads with `LeRobotDataset(...)` anywhere.
 | Peak VRAM | **0.62 GB** |
 | Final L1 loss | **0.070** |
 | Image norm | ImageNet stats via the LeRobot processor pipeline |
+
+</details>
 
 Chunked action prediction (`chunk_size = 32`), ImageNet-pretrained backbone, and
 `use_vae = false` — a deterministic policy is the right fit for a deterministic reach and
