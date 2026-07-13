@@ -23,16 +23,10 @@
 **▶ [Drive the twin in your browser — no install needed](https://raw.githack.com/dsl-robotics/skatearm/main/tools/skate_commander/preview.html)**<br>
 *Jog the joints live over a recorded scene — the fastest way to feel the cockpit.*
 
-Prefer to read the full story? **[live demo & full write-up](https://dsl-robotics.github.io/skatearm/)**
+Prefer to watch or read? **[product film](https://dsl-robotics.github.io/skatearm/video/commander_v08_product.mp4)** · **[live demo & full write-up](https://dsl-robotics.github.io/skatearm/)**
 
 <sub>Built by a mechatronics student **[open to junior robotics-software roles ↓](#author)**</sub>
 
-</div>
-
-<div align="center">
-  <a href="https://dsl-robotics.github.io/skatearm/video/commander_v08_product.mp4">
-    <img src="docs/img/commander_v08_video_thumb.png" width="720" alt="Skate Commander v0.8 — product walkthrough (click to play)">
-  </a>
 </div>
 
 <div align="center">
