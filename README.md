@@ -581,10 +581,7 @@ Tools get built because SkateArm needs them — then released standalone:
 
 Ideas and requests from other Skate owners are welcome — open an issue.
 
-**Why this project:**
-1. **Level up in robotics** — from a single SO-101 arm ([previous project](https://github.com/Lavs-Daniels-Skots-231RMC173/so101-native-ubuntu-ros2-moveit)) to a bimanual humanoid: two-arm coordination, sim-to-real.
-2. **Learn by building** — ROS 2, MuJoCo, policy learning (ACT/SmolVLA), classical control, embedded in one system.
-3. **Give back to the Skate community** — first-mover window to publish open tools, datasets and guides others can build on.
+**Why this project:** leveling up from a single [SO-101 arm](https://github.com/Lavs-Daniels-Skots-231RMC173/so101-native-ubuntu-ros2-moveit) to a bimanual humanoid — two-arm coordination and sim-to-real — while learning ROS 2, MuJoCo and policy learning end-to-end, and publishing open tools, datasets and guides for the Skate community.
 
 ## Related projects
 
