@@ -299,7 +299,8 @@ this adds gravity, inertia and torque limits — not self-collision.
 
 > **How this was actually debugged:** the policy trained to 0.070 loss but first rolled out **0.65 m — worse than home**. The culprit was a silent normalization-contract bug, not the weights. Full story → **[The ACT policy that reached for garbage](docs/deep-dive-act-normalization.md)**.
 
-### Reproduce
+<details>
+<summary><strong>Reproduce &amp; artifacts</strong> — full commands, eval harness, release, gotchas &nbsp; <kbd>click to expand</kbd></summary>
 
 Full scripts: [`tools/skate_commander/examples/act_reach/`](tools/skate_commander/examples/act_reach/) — run from that directory.
 
@@ -338,6 +339,8 @@ MUJOCO_GL=osmesa python rollout_act.py ../../act_reach/checkpoints/020000/pretra
   better.
 - **4 GB is enough.** Batch 4 holds peak VRAM at 0.62 GB; `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`
   avoids fragmentation stalls on the laptop GPU.
+
+</details>
 
 </details>
 
