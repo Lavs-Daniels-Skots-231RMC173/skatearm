@@ -156,7 +156,7 @@ flowchart LR
 </div>
 
 <details>
-<summary><strong>Dataset spec</strong> — fields, sizes, task string</summary>
+<summary><strong>Dataset spec</strong> — fields, sizes, task string &nbsp; <kbd>click to expand</kbd></summary>
 
 | Field | Value |
 |---|---|
@@ -187,7 +187,7 @@ it loads with `LeRobotDataset(...)` anywhere.
 </div>
 
 <details>
-<summary><strong>Training config</strong> — model, hardware, hyperparameters</summary>
+<summary><strong>Training config</strong> — model, hardware, hyperparameters &nbsp; <kbd>click to expand</kbd></summary>
 
 | Setting | Value |
 |---|---|
