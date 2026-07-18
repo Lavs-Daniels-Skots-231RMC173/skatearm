@@ -253,7 +253,7 @@ in [`eval_data/ood.json`](tools/skate_commander/examples/act_reach/eval_data/ood
 
 **Does it tolerate a shifted camera and lighting? Mostly — and it fails gracefully.**
 Re-running the **same checkpoint** on the same targets under **domain randomization** —
-camera extrinsics jittered (±12° / ±8%), plus lighting and robot/floor appearance, task
+camera extrinsics jittered (az ±12° · el ±6° · dist ±8% · look ±3 cm), plus lighting and robot/floor appearance, task
 cues (orange/blue targets) kept fixed:
 
 <div align="center">
@@ -280,8 +280,8 @@ position servos and integrating full rigid-body dynamics under gravity
 
 | Same checkpoint · 24 rollouts | Kinematic (teleport) | Dynamic (servos + mj_step) |
 |---|---|---|
-| Reach error — right / left | 5.6 / 5.2 cm | 5.2 / 4.6 cm |
-| Both hands within 8 cm | 67 % | 88 % |
+| Reach error — right / left | 5.7 / 5.0 cm | 5.2 / 4.6 cm |
+| Both hands within 8 cm | 71 % | 88 % |
 | Unstable / diverged | — | 0 / 24 |
 
 <div align="center">
@@ -292,8 +292,8 @@ position servos and integrating full rigid-body dynamics under gravity
 
 The servos track each command to **~2° (0.034 rad)** and every episode stays stable, so
 the kinematic number wasn't hiding a dynamics cliff — the commanded poses are physically
-realizable. (The kinematic column is the single published checkpoint on these targets — 67%, just under the 3-seed 69% ± 9% headline; the small dynamic edge is servo settling smoothing the motion plus 24-rollout noise, not a real gain.) [`dynamic_reach.py`](tools/skate_commander/examples/act_reach/dynamic_reach.py)
-reproduces it; raw numbers in [`eval_data/dynamic.json`](tools/skate_commander/examples/act_reach/eval_data/dynamic.json).
+realizable. (The kinematic column is the **matched same-24-targets baseline** — the `clean` condition of the robustness eval, 71 %; the dynamic column's small edge over it is servo settling smoothing the final pose plus 24-rollout noise, not evidence that dynamics *helps* — the honest point is the reach doesn't *degrade* under `mj_step`.) [`dynamic_reach.py`](tools/skate_commander/examples/act_reach/dynamic_reach.py)
+reproduces the dynamic column ([`eval_data/dynamic.json`](tools/skate_commander/examples/act_reach/eval_data/dynamic.json)); the matched kinematic baseline is the `clean` row of [`eval_data/robust.json`](tools/skate_commander/examples/act_reach/eval_data/robust.json) — same checkpoint and targets.
 Contacts are disabled in the control scene (the raw meshes self-jam at the shoulders), so
 this adds gravity, inertia and torque limits — not self-collision.
 
@@ -339,6 +339,7 @@ MUJOCO_GL=osmesa python rollout_act.py ../../act_reach/checkpoints/020000/pretra
   better.
 - **4 GB is enough.** Batch 4 holds peak VRAM at 0.62 GB; `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`
   avoids fragmentation stalls on the laptop GPU.
+- **Eval scripts write `<name>_metrics.json` to `$ACT_TMP`.** Each `*_reach.py` (ood / robust / dynamic / state_baseline …) writes its metrics as `<name>_metrics.json` into `$ACT_TMP`; the copies committed under `eval_data/` are that JSON renamed to `<name>.json` (e.g. `robust_metrics.json` → `eval_data/robust.json`).
 
 </details>
 
