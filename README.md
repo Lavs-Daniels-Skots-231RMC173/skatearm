@@ -241,7 +241,7 @@ reach collapses:
 | Same checkpoint · 24 rollouts | In-distribution | Out-of-distribution |
 |---|---|---|
 | Reach error — right / left | **5.6 / 5.2 cm** | 16.8 / 12.9 cm |
-| Both hands within 8 cm | **67 %** | **0 %** |
+| Both hands within 8 cm | **67 %** [47–82] | **0 %** [0–14] |
 | Targets IK-reachable < 2 cm | 100 % | 100 % |
 
 Every out-of-distribution target was physically reachable (mean IK residual 7 mm),
@@ -249,7 +249,7 @@ so this is a real generalization gap, not an artifact: the learned vision→moti
 map **interpolates inside its training reach volume and does not extrapolate past
 it**. [`ood_reach.py`](tools/skate_commander/examples/act_reach/ood_reach.py)
 (`MODE=indist|ood`) reproduces both columns from the one checkpoint; raw numbers
-in [`eval_data/ood.json`](tools/skate_commander/examples/act_reach/eval_data/ood.json).
+in [`eval_data/ood.json`](tools/skate_commander/examples/act_reach/eval_data/ood.json). Bracketed ranges on the success rates (here and in the robustness and dynamics tables below) are **95 % Wilson score intervals** for n = 24 — wide by design, so read cross-condition gaps as indicative, not exact.
 
 **Does it tolerate a shifted camera and lighting? Mostly — and it fails gracefully.**
 Re-running the **same checkpoint** on the same targets under **domain randomization** —
@@ -264,7 +264,7 @@ cues (orange/blue targets) kept fixed:
 | Same checkpoint · 24 targets | clean | camera jitter | full DR |
 |---|---|---|---|
 | Reach error — right / left | 5.7 / 5.0 cm | 7.2 / 7.4 cm | 7.3 / 7.4 cm |
-| Both hands within 8 cm | 71 % | 38 % | 42 % |
+| Both hands within 8 cm | 71 % [51–85] | 38 % [21–57] | 42 % [24–61] |
 
 The reach **degrades gracefully — it doesn't collapse** (≈ 7 cm, not the ~16 cm OOD failure):
 a mis-calibrated camera raises the error ~40 % and roughly halves success, but the arms still
@@ -281,7 +281,7 @@ position servos and integrating full rigid-body dynamics under gravity
 | Same checkpoint · 24 rollouts | Kinematic (teleport) | Dynamic (servos + mj_step) |
 |---|---|---|
 | Reach error — right / left | 5.7 / 5.0 cm | 5.2 / 4.6 cm |
-| Both hands within 8 cm | 71 % | 88 % |
+| Both hands within 8 cm | 71 % [51–85] | 88 % [69–96] |
 | Unstable / diverged | — | 0 / 24 |
 
 <div align="center">

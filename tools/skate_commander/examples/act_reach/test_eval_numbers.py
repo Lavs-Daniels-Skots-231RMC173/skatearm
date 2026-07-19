@@ -132,3 +132,28 @@ def test_readme_dynamic_table():
     # kinematic column is the clean condition of the robustness eval (same targets/checkpoint)
     clean = summarize(load("robust.json")["clean"]["R"], load("robust.json")["clean"]["L"])
     assert (cm(clean["meanR"]), cm(clean["meanL"]), pct(clean["success_8cm"])) == (5.7, 5.0, 71)
+
+
+def _wilson(k, n, z=1.96):
+    """Closed-form Wilson score interval for a binomial proportion (deterministic)."""
+    p = k / n
+    denom = 1 + z * z / n
+    center = (p + z * z / (2 * n)) / denom
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return rh0(100 * (center - half)), rh0(100 * (center + half))
+
+
+def _k(node):
+    worst = [max(a, b) for a, b in zip(node["R"], node["L"])]
+    return sum(1 for w in worst if w < 0.08), len(worst)
+
+
+def test_readme_success_wilson_ci():
+    """95% Wilson CIs on the success rates (bracketed ranges in the stress-test tables)."""
+    rob = load("robust.json")
+    assert _wilson(*_k(rob["clean"])) == (51, 85)
+    assert _wilson(*_k(rob["cam"])) == (21, 57)
+    assert _wilson(*_k(rob["dr"])) == (24, 61)
+    assert _wilson(*_k(load("ood_indist.json"))) == (47, 82)
+    assert _wilson(*_k(load("ood.json"))) == (0, 14)
+    assert _wilson(*_k(load("dynamic.json"))) == (69, 96)
