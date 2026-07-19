@@ -251,6 +251,9 @@ it**. [`ood_reach.py`](tools/skate_commander/examples/act_reach/ood_reach.py)
 (`MODE=indist|ood`) reproduces both columns from the one checkpoint; raw numbers
 in [`eval_data/ood.json`](tools/skate_commander/examples/act_reach/eval_data/ood.json). Bracketed ranges on the success rates (here and in the robustness and dynamics tables below) are **95 % Wilson score intervals** for n = 24 — wide by design, so read cross-condition gaps as indicative, not exact.
 
+<details>
+<summary><strong>Further stress tests</strong> — camera robustness &amp; real actuator dynamics (same checkpoint): degrades gracefully under camera jitter, survives full <code>mj_step</code> dynamics &nbsp; <kbd>click to expand</kbd></summary>
+
 **Does it tolerate a shifted camera and lighting? Mostly — and it fails gracefully.**
 Re-running the **same checkpoint** on the same targets under **domain randomization** —
 camera extrinsics jittered (az ±12° · el ±6° · dist ±8% · look ±3 cm), plus lighting and robot/floor appearance, task
@@ -296,6 +299,8 @@ realizable. (The kinematic column is the **matched same-24-targets baseline** �
 reproduces the dynamic column ([`eval_data/dynamic.json`](tools/skate_commander/examples/act_reach/eval_data/dynamic.json)); the matched kinematic baseline is the `clean` row of [`eval_data/robust.json`](tools/skate_commander/examples/act_reach/eval_data/robust.json) — same checkpoint and targets.
 Contacts are disabled in the control scene (the raw meshes self-jam at the shoulders), so
 this adds gravity, inertia and torque limits — not self-collision.
+
+</details>
 
 > **How this was actually debugged:** the policy trained to 0.070 loss but first rolled out **0.65 m — worse than home**. The culprit was a silent normalization-contract bug, not the weights. Full story → **[The ACT policy that reached for garbage](docs/deep-dive-act-normalization.md)**.
 
