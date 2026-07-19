@@ -75,10 +75,14 @@ def make(model_dir, out_name="skt_v3_control.xml", kp=100.0, damping=2.0, armatu
     for site in ("ee_left", "ee_right"):
         ET.SubElement(sens, "framepos", {"name": f"{site}_pos", "objtype": "site", "objname": site})
         ET.SubElement(sens, "framequat", {"name": f"{site}_quat", "objtype": "site", "objname": site})
+        # M1 — wrist 6-axis force/torque: the wrench transmitted through the wrist
+        # joint (site frame). A true contact wrench, not the actuator-torque proxy.
+        ET.SubElement(sens, "force", {"name": f"{site}_force", "site": site})
+        ET.SubElement(sens, "torque", {"name": f"{site}_torque", "site": site})
 
     out = os.path.join(model_dir, out_name)
     ET.ElementTree(root).write(out)
-    print(f"wrote {out}: {n} position actuators (kp={kp}, damping={damping}), {3 * n + 4} sensors")
+    print(f"wrote {out}: {n} position actuators (kp={kp}, damping={damping}), {3 * n + 8} sensors")
     return out
 
 

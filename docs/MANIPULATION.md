@@ -1,6 +1,6 @@
 # Manipulation core — scope & phased plan
 
-> **Status: plan, not implementation.** Nothing in this document is built yet. It scopes how SkateArm's
+> **Status: mostly plan.** M1's wrist force/torque sensor is now in the tree (see M1's status below); everything else here is plan, not implementation. It scopes how SkateArm's
 > manipulation would evolve from today's *scripted position control + joint-torque watchdog + weld-constraint
 > grasp* into genuine **contact-force manipulation** — wrist force/torque sensing, compliant control, and a real
 > grasp — sim-first and honest about the hardware boundary. It exists because the portfolio review correctly
@@ -27,6 +27,7 @@ A manipulation core that **(1) measures** the contact wrench at the wrist, **(2)
 ## 3 · Phased plan
 
 ### M1 — Wrist force/torque sensing in sim  *(foundation, low-risk)*
+- **Status — foundation shipped.** The `force`+`torque` sensors are in `make_control_model.py` and validated by `sim/test_ft_sensor.py` (both wrists read a known static load to < 0.05 N / N·m; run in CI). Remaining M1: surface the wrench in the telemetry / cockpit plots and re-express the insertion guard as a wrench threshold.
 - **Goal:** a true 6-axis contact wrench at each wrist, replacing the actuator-torque proxy.
 - **Do:** add a MuJoCo `force`+`torque` sensor pair on a site at each wrist flange; surface the wrench in the telemetry schema and the cockpit plots; re-express the insertion guard as a *wrench* threshold.
 - **Replaces:** the `tau_R()` sum-of-`actuatorfrc` watchdog → a real wrench signal.

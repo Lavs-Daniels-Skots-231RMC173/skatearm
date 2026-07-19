@@ -56,3 +56,8 @@ jobs:
           tools/skate_commander/test/test_kinematics.py
           tools/skate_commander/test/test_obstacles.py
           tools/skate_commander/test/test_urdf.py
+
+      - name: Wrist force/torque sensor calibration (M1)
+        env:
+          SKT_DIR: skate_teleop/skt_v3
+        run: pytest -q sim/test_ft_sensor.py
