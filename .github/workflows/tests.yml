@@ -27,6 +27,8 @@ jobs:
           tools/skate_ros2/test/test_driver_logic.py
           tools/skate_commander/test/test_nl.py
           tools/skate_ros2_control/test/test_make_control_urdf.py
+      - name: ACT eval numbers match committed raw data (no GPU)
+        run: pytest -q tools/skate_commander/examples/act_reach/test_eval_numbers.py
 
   sim-model:
     name: model-gated tests (MuJoCo guard / planner / IK / URDF)
