@@ -42,10 +42,11 @@ jobs:
         run: pip install -r tools/skate_commander/requirements.txt "mujoco==3.10.0" pytest
       - name: Fetch the official skt_v3 model
         run: git clone --depth 1 https://github.com/Rbotic/skate_teleop.git
-      - name: Build the control + collision models
+      - name: Build the control + collision + cell models
         run: |
           python sim/make_control_model.py skate_teleop/skt_v3
           python sim/make_collision_model.py skate_teleop/skt_v3
+          python sim/make_cell_scene.py skate_teleop/skt_v3
       - name: Collision guard, RRT planner, IK, obstacles, URDF
         env:
           SKT_DIR: skate_teleop/skt_v3
@@ -61,3 +62,8 @@ jobs:
         env:
           SKT_DIR: skate_teleop/skt_v3
         run: pytest -q sim/test_ft_sensor.py
+
+      - name: Force-regulated insertion — misalignment recovery (M2)
+        env:
+          SKT_DIR: skate_teleop/skt_v3
+        run: pytest -q sim/test_insertion.py

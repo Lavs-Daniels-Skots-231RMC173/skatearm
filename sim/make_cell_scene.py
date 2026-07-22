@@ -35,11 +35,15 @@ SCENE = """
 """
 
 # v1 grasp stand-in: weld constraints, inactive until grasp() engages them at
-# runtime (the real Skate gripper geometry is unknown until hardware arrives)
+# runtime (the real Skate gripper geometry is unknown until hardware arrives).
+# fixture_base: an inactive base<->world weld — the M2 insertion eval clamps the
+# base part into a RIGID fixture so the misalignment sweep is deterministic (no
+# base recoil under the insertion force), stiffer solref than the magnetic grasp.
 EQUALITY = """
   <equality>
     <weld name="grasp_left" body1="wrist_a3_1" body2="base_part" active="false" solref="0.005 1"/>
     <weld name="grasp_right" body1="wrist_a3_Mirror__1" body2="peg" active="false" solref="0.005 1"/>
+    <weld name="fixture_base" body1="base_part" active="false" solref="0.002 1"/>
   </equality>
 """
 
