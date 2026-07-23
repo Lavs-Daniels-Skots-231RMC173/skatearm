@@ -122,6 +122,58 @@ def run_one(m, d, armR, snap, W0, bp, pg, offset_xy, search=True, **params):
     return res
 
 
+def _peg_tilt(d, pg):
+    """Angle of the peg's long axis (local +z) from world vertical, degrees."""
+    z = d.xmat[pg].reshape(3, 3)[:, 2]
+    return float(np.degrees(np.arccos(np.clip(z[2], -1, 1))))
+
+
+def run_one_theta(m, d, armR, snap, W0, bp, pg, theta_deg, axis, search=True, **params):
+    """Inject an initial peg tilt (~theta_deg about `axis`), then insert with the
+    hold orientation kept UPRIGHT (relock=False) so the 6-DoF IK LEVELS the peg
+    while it seats. Reports the injected tilt, the final tilt and the oracle seat."""
+    restore(m, d, snap)
+    armR.lock_orientation()
+    q_up = np.array(armR.q_lock, float)
+    qa = np.zeros(4)
+    mujoco.mju_axisAngle2Quat(qa, np.asarray(axis, float), np.radians(theta_deg))
+    q_tilt = np.zeros(4)
+    mujoco.mju_mulQuat(q_tilt, qa, q_up)
+    armR.q_lock = q_tilt
+    ee = armR.ee_pos().copy()
+    for _ in range(90):                          # tilt the staged peg to ~theta
+        armR.set_ctrl(armR.ik_step6(ee)[0])
+        for _ in range(4):
+            mujoco.mj_step(m, d)
+    tilt0 = _peg_tilt(d, pg)
+    armR.q_lock = q_up                           # target upright -> the IK levels it
+    res = Insertion(m, d, armR, W0, **params).run(search=search, relock=False)
+    seated, rel_xy, depth = score(d, bp, pg)
+    res.update(theta_cmd_deg=theta_deg, tilt0_deg=round(tilt0, 1),
+               tiltf_deg=round(_peg_tilt(d, pg), 1), seated=seated,
+               rel_xy_mm=round(rel_xy * 1000, 1), depth_mm=round(depth * 1000, 1))
+    return res
+
+
+def theta_sweep(model_dir, thetas_deg, dirs=2):
+    m = load_cell(model_dir)
+    d, armR, W0, bp, pg = stage(m)
+    snap = snapshot(d)
+    axes = [[np.cos(a), np.sin(a), 0.0]
+            for a in [2 * np.pi * k / dirs for k in range(dirs)]]
+    print(f"staged. peg-tilt (theta) tolerance sweep, {dirs} tilt-axes/theta:\n")
+    for th in thetas_deg:
+        ok, t0s, tfs = 0, [], []
+        for ax in axes:
+            r = run_one_theta(m, d, armR, snap, W0, bp, pg, th, ax)
+            ok += int(r["seated"]); t0s.append(r["tilt0_deg"]); tfs.append(r["tiltf_deg"])
+            if th == 0:
+                break
+        n = 1 if th == 0 else dirs
+        print(f"  cmd {th:>2} deg -> injected tilt {max(t0s):4.1f} deg: {ok}/{n} seated, "
+              f"levelled to <= {max(tfs):.1f} deg")
+
+
 def sweep(model_dir, offsets_mm, dirs, no_search_baseline=False):
     m = load_cell(model_dir)
     d, armR, W0, bp, pg = stage(m)
@@ -159,7 +211,13 @@ def main():
     ap.add_argument("--dirs", type=int, default=6, help="directions per offset")
     ap.add_argument("--no-search-baseline", action="store_true",
                     help="also run with the spiral search OFF")
+    ap.add_argument("--theta", default=None,
+                    help="run the peg-tilt tolerance sweep instead (degrees, e.g. 0,3,6,9,12)")
     args = ap.parse_args()
+    if args.theta is not None:
+        thetas = [int(x) for x in args.theta.split(",") if x.strip() != ""]
+        theta_sweep(args.model, thetas, dirs=max(2, args.dirs // 3))
+        return
     offsets = [int(x) for x in args.offsets.split(",") if x.strip() != ""]
     sweep(args.model, offsets, args.dirs, args.no_search_baseline)
 

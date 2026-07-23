@@ -109,9 +109,14 @@ class Insertion:
             self.on_step()
 
     # --- controller ----------------------------------------------------------
-    def run(self, search=True):
+    def run(self, search=True, relock=True):
+        # relock=True snapshots the current wrist orientation as the hold target
+        # (nominal). relock=False keeps the caller's pre-set arm.q_lock, so if that
+        # is the UPRIGHT orientation the 6-DoF IK actively LEVELS an initially
+        # tilted peg toward vertical while it inserts (theta-misalignment recovery).
         arm = self.arm
-        arm.lock_orientation()
+        if relock:
+            arm.lock_orientation()
         F0 = self._wrench_world()
         z0 = float(arm.ee_pos()[2])
         z_cmd = z0
