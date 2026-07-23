@@ -16,6 +16,9 @@ servos — qpos is never written directly). Tasks:
             orientation-locked carry to the meet point, relative-servo align,
             then a force-guarded (tau-watchdog) descent; metric = insertion
             depth, peg tilt, in-pocket and abort.
+  insert_m2 — as `insert`, but the M2 force-regulated controller (wrist-wrench
+            regulation + spiral bore-search, sim/insertion.py) replaces the
+            tau-watchdog descent; metric = in-pocket, peak wrench, tilt, abort.
 
 Usage (build the models + cell scene once, then run):
     python make_control_model.py   /path/to/skate_teleop/skt_v3
@@ -34,6 +37,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from primitives import reach, hold, move_joints, grasp, release, Arm  # noqa: E402
+from insertion import Insertion  # noqa: E402
 
 TABLE_Z = 0.10          # a peg below this height counts as dropped
 
@@ -228,7 +232,66 @@ def task_insert(m, trials, rng):
     return rows
 
 
-TASKS = {"reach": task_reach, "carry": task_carry, "insert": task_insert}
+# ---- task: force-regulated peg-in-hole (M2) --------------------------------
+def task_insert_m2(m, trials, rng):
+    """Force-regulated peg-in-hole (M2 `Insertion`): the same bimanual staging as
+    `insert`, but the right arm regulates the wrist contact force and spiral-searches
+    the bore instead of the open-loop tau-watchdog descent. A small random xy
+    misalignment (assumed centre vs true bore, <=4 mm) is injected each trial to
+    exercise the search; the left arm keeps holding the base at the meet point."""
+    bp, pg = body_id(m, "base_part"), body_id(m, "peg")
+    MEET_L = [-0.053, 0.41, 0.21]
+    rows = []
+    for _ in range(trials):
+        d = fresh(m)
+        approach(m, d)
+        armL, armR = Arm(m, d, "left"), Arm(m, d, "right")
+        jx = rng.uniform(-0.004, 0.004)
+        t0 = time.perf_counter()
+        reach(m, d, {"left": [-0.18 + jx, 0.44, 0.20], "right": [0.18 + jx, 0.44, 0.20]},
+              seconds=2.4, tol=0.012, grav_ff=True)
+        reach(m, d, {"left": [-0.18 + jx, 0.44, 0.115], "right": [0.18 + jx, 0.44, 0.115]},
+              seconds=2.0, tol=0.010, grav_ff=True)
+        grasp(m, d, "left"); grasp(m, d, "right"); hold(m, d, 0.4)
+        armL.lock_orientation(); armR.lock_orientation()
+        servo6_both(m, d, armL, armR, MEET_L, [0.053, 0.41, 0.30], seconds=4.5)
+
+        def pocket_top():
+            return d.xpos[bp] + np.array([0, 0, 0.027])
+
+        def peg_bottom():
+            return d.xpos[pg] + np.array([0, 0, -0.020])
+
+        for _ in range(400):                                # align ~12mm above the opening
+            exy = (pocket_top() - d.xpos[pg])[:2]
+            zerr = (pocket_top()[2] + 0.012) - peg_bottom()[2]
+            q, _ = armR.ik_step6(armR.ee_pos() + np.array([exy[0], exy[1], zerr])); armR.set_ctrl(q)
+            qL, _ = armL.ik_step6(np.asarray(MEET_L)); armL.set_ctrl(qL)
+            for _ in range(4):
+                mujoco.mj_step(m, d)
+            if np.linalg.norm(exy) < 0.0035 and abs(zerr) < 0.007:
+                break
+        # residual misalignment the controller must absorb (the align above already
+        # gets within ~3.5mm; inject a small extra so trials aren't all identical)
+        ang, rr = rng.uniform(0, 2 * np.pi), rng.uniform(0, 0.0025)
+        center = armR.ee_pos()[:2] + np.array([rr * np.cos(ang), rr * np.sin(ang)])
+        res = Insertion(m, d, armR, center, hold_arms=[(armL, MEET_L)]).run(search=True)
+        # score on the oracle peg-in-base pose (rel is invariant to base recoil under
+        # the left arm), not the controller's proprioceptive seated flag
+        rel = d.xpos[pg] - d.xpos[bp]
+        in_pocket = bool(np.linalg.norm(rel[:2]) < 0.006 and 0.015 < rel[2] < 0.035)
+        rows.append({"offset_mm": round(rr * 1000, 1),
+                     "peg_rel_z_mm": round(float(rel[2]) * 1000, 1),
+                     "peg_tilt_deg": round(tilt_deg(m, d, pg), 1),
+                     "peak_wrench_n": res["peak_wrench_n"],
+                     "wall_s": round(time.perf_counter() - t0, 1),
+                     "aborted": bool(res["aborted"]), "in_pocket": in_pocket,
+                     "success": bool(in_pocket and not res["aborted"])})
+    return rows
+
+
+TASKS = {"reach": task_reach, "carry": task_carry, "insert": task_insert,
+         "insert_m2": task_insert_m2}
 
 
 def run(model_dir, tasks, trials, seed):

@@ -46,11 +46,11 @@ def test_benchmark_all_tasks_smoke():
     if not _ready():
         return
     import benchmark
-    report = benchmark.run(str(SKT), ["reach", "carry", "insert"], trials=1, seed=1)
-    for t in ("reach", "carry", "insert"):
+    report = benchmark.run(str(SKT), ["reach", "carry", "insert", "insert_m2"], trials=1, seed=1)
+    for t in ("reach", "carry", "insert", "insert_m2"):
         assert t in report and report[t]["trials"], f"{t} produced no trial"
         assert "success_rate" in report[t]["summary"]
-    print("PASS benchmark all-tasks smoke (reach/carry/insert each ran)")
+    print("PASS benchmark all-tasks smoke (reach/carry/insert/insert_m2 each ran)")
 
 
 if __name__ == "__main__":
