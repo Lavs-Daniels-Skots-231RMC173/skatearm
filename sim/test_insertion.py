@@ -90,9 +90,30 @@ def test_theta_levels_and_seats():
     print(f"PASS theta: peg tilt {r['tilt0_deg']} -> {r['tiltf_deg']} deg, seated")
 
 
+def test_round_bore_seats():
+    """The controller seats in the spec's ROUND chamfered H9 bore, not just the
+    square v1 stand-in: a faceted-cylinder bore (~0.4 mm clearance on the D20 peg)
+    with a wider lead-in mouth (make_cell_scene --round-bore). Generated to a SIDE
+    model so the square default and the shared staging above are untouched."""
+    if _staged() is None:
+        print(f"SKIP: {_SKIP}"); return
+    import mujoco
+    from make_cell_scene import make
+    from eval_insertion import stage, snapshot, run_one
+    skt = Path(os.environ.get("SKT_DIR", "/tmp/skate_teleop/skt_v3"))
+    round_xml = make(str(skt), round_bore=True, out="skt_v3_cell_round.xml")
+    m = mujoco.MjModel.from_xml_path(round_xml)
+    d, armR, W0, bp, pg = stage(m)
+    r = run_one(m, d, armR, snapshot(d), W0, bp, pg, [0.002, 0.0], search=True)
+    assert r["seated"] and not r["aborted"] and r["peak_wrench_n"] < 8.5, r
+    print(f"PASS round-bore: seated in H9 bore, rel_xy {r['rel_xy_mm']} mm, "
+          f"depth {r['depth_mm']} mm, peak {r['peak_wrench_n']} N")
+
+
 if __name__ == "__main__":
     test_nominal_seats()
     test_search_recovers_3mm()
     test_no_search_jams_8mm()
     test_theta_levels_and_seats()
+    test_round_bore_seats()
     print("INSERTION (M2) TEST DONE")
