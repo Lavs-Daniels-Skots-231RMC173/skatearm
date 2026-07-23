@@ -1,8 +1,9 @@
 # Manipulation core — scope & phased plan
 
-> **Status: M1 + M2 in the tree; M3–M5 plan.** M1's wrist force/torque sensor and M2's
-> force-regulated insertion are implemented and tested (see their status below); M3–M5 are
-> plan, not implementation. This scopes how SkateArm's manipulation evolves from the original
+> **Status: M1 + M2 + M3 in the tree; M4–M5 plan.** M1's wrist force/torque sensor, M2's
+> force-regulated insertion and M3's Cartesian admittance (compliant) control are implemented
+> and tested (see their status below); M4–M5 are plan, not implementation. This scopes how
+> SkateArm's manipulation evolves from the original
 > *scripted position control + joint-torque watchdog + weld-constraint grasp* into genuine
 > **contact-force manipulation** — wrist force/torque sensing, force-regulated and compliant
 > control, and a real grasp — sim-first and honest about the hardware boundary. It exists
@@ -48,13 +49,13 @@ A manipulation core that **(1) measures** the contact wrench at the wrist, **(2)
 - **Live cycle — integrated.** The controller now drives S4 of the demonstrator's GRAFCET cycle (`sim/sequencer.py`): the right arm force-regulates the insertion (peak wrench ~2.6 N) while the left keeps holding the base at the meet point (`hold_arms`); the full cycle seats, QC-accepts and places the unit, the peg staying centred in the bore through placement. So the *rendered demo and the cockpit run on M2's force control*, not the old open-loop `tau`-watchdog descent.
 - **Also shipped:** a `benchmark.py` `insert_m2` task on the new controller (bimanual, scored on the base-recoil-invariant oracle), the peg-tilt (θ) tolerance above, and the spec's **round chamfered H9 bore** — `make_cell_scene.py --round-bore` generates a faceted-cylinder bore (20 facets, 10.4 mm inradius → ≈0.4 mm radial clearance on the D20 peg) with a wider lead-in mouth. The M2 controller seats in it with **no retuning**: misalignment sweep (search on) 0 mm 1/1, 2 mm 4/4, 4 mm 4/4, 6 mm 3/4, peak axial force ≤5.4 N — locked in by `test_round_bore_seats` in CI (generated to a *side* model so the square v1 pocket stays the default and the other tests' shared staging is untouched). So the earlier "small remaining" gap is closed; M2 is complete. **Risk (addressed):** contact stiffness (`solref`/`solimp`) tuning — the rigid `fixture_base` weld keeps the sweep deterministic. **Effort:** medium; core contact-control work.
 
-### M3 — Cartesian compliant (admittance/impedance) arm control
-- **Goal:** the arm *yields* to unexpected contact rather than latching a soft-stop — a general controller, not the 1-D dual-carry heuristic.
-- **Do:** wrap the position servos in a Cartesian admittance loop at the TCP (measured wrench → commanded pose/velocity offset), tunable stiffness/damping per axis, integrated with the DLS-IK; give the cockpit selectable *compliant* vs *stop* contact modes.
+### M3 — Cartesian compliant (admittance/impedance) arm control — **SHIPPED**
+- **Status — shipped.** `sim/admittance.py` (`Admittance`) wraps the position servos in a task-space admittance loop at the TCP: the arm *yields* to an external contact wrench at a tunable per-axis stiffness instead of holding rigid or latching the cockpit's soft-stop — a general controller, not the 1-D dual-carry heuristic. Verified by `sim/test_admittance.py` (in CI) and swept by `sim/eval_admittance.py`.
+- **How:** a diagonal virtual mass-spring-damper per world axis — `Mv·e'' + D·e' + K·e = F_ext` — driven by the M1 wrist wrench (baselined at start, so it responds to the *change* — real contact — not the static grasp load / sensor bias). The compliant displacement `e` is added to the nominal TCP pose and realised by the existing 6-DoF DLS-IK on the position actuators (qpos is never written directly); `D` defaults to critical (ζ = 1) so the yield is smooth and returns without overshoot. Steady state `e = F_ext/K`: a low-K axis yields, a high-K axis holds. Gravity feed-forward (`mj_rne`, qvel zeroed → no Coriolis) holds height, as in `reach`/M2. Orientation is held (translational compliance; rotational is a later extension).
 - **Depends:** M1; benefits from M2.
-- **Sim ↔ hardware:** admittance-on-position-servos ports cleanly to a real position-controlled arm (which the Skate is).
-- **Verify:** a push-and-yield test (external wrench → TCP moves along the compliant axes at the commanded stiffness); a bimanual compliant carry that generalises the dual-carry demo.
-- **Risk:** admittance stability vs the inner position-loop bandwidth (the existing gravity feed-forward helps here). **Effort:** medium; the main new control theory.
+- **Sim ↔ hardware:** admittance-on-position-servos ports cleanly to a real position-controlled arm (which the Skate is); only the wrench *source* differs (a real F/T sensor or a joint-torque estimator behind the M1 interface).
+- **Verify — commanded-stiffness curve + push-and-yield.** Driven by a supplied wrench (the control law in isolation), the TCP yield settles to `e = F/K` across a 16× stiffness sweep — K = 200/400/800/1600/3200 N/m → 40/20/10/5/2.5 mm at F = 8 N, `e·K = 8.0 N` at every point — and a per-axis K = [400, 1600, 400] gives e = [20, 5, 0] mm (compliant x/z yield, stiff y holds), returning to ~0 when the wrench is removed. A **push-and-yield** with a *real* force on the wrist read back through the M1 sensor (+8 N) yields the TCP ~21 mm along the pushed axis and returns to the nominal pose on release (sensor-in-the-loop). Reproduce: `python sim/eval_admittance.py --model .../skt_v3`.
+- **Risk (addressed):** admittance stability vs the inner position-loop bandwidth — symplectic integration + critical damping + the gravity feed-forward keep it stable across the whole sweep. **Remaining (small):** a cockpit *compliant vs stop* mode toggle, and a bimanual compliant carry that generalises the dual-carry demo (the controller already accepts `hold_arms`, so it is bimanual-ready). **Effort:** medium; the main new control theory.
 
 ### M4 — Real grasp model  *(actuated gripper)*
 - **Goal:** replace the weld stand-in with an actuated parallel-jaw gripper closing on friction contacts, with grasp-force control. (The spec's round chamfered H9 bore is already in the tree from M2 — `make_cell_scene.py --round-bore`, verified by `test_round_bore_seats` — so M4 is now purely the gripper.)
@@ -72,11 +73,11 @@ A manipulation core that **(1) measures** the contact wrench at the wrist, **(2)
 
 ## 4 · Sequencing & the smallest useful slice
 
-M1 was the keystone — low-risk, and nothing regulates force without it. The smallest end-to-end slice that actually moves the review needle is **M1 + M2**, and it is now **delivered**: a *force-regulated* insertion reported with a *misalignment-tolerance curve*, replacing the scripted-push-plus-threshold. That result converts "assembles when perfectly aligned" into "assembles under realistic misalignment via contact force" — the real manipulation claim. M3/M4 next broaden it from insertion to general compliant manipulation and a real grasp.
+M1 was the keystone — low-risk, and nothing regulates force without it. The smallest end-to-end slice that actually moves the review needle is **M1 + M2**, and it is now **delivered**: a *force-regulated* insertion reported with a *misalignment-tolerance curve*, replacing the scripted-push-plus-threshold. That result converts "assembles when perfectly aligned" into "assembles under realistic misalignment via contact force" — the real manipulation claim. **M3 has since broadened it** from insertion to a general Cartesian *compliant* controller (yield at a commanded per-axis stiffness, `sim/admittance.py`); M4 next adds the real grasp.
 
 ## 5 · Honesty rules
 
-M1 and M2 are in the tree with their tests; **M3–M5 are still a plan, not implementation.** This doc keeps SkateArm's honesty rules: each phase states its sim-vs-hardware boundary, ships with a verification test that lands in the repo, and claims nothing until its metric is committed. Nothing in M3–M5 should be described as done, in progress, or working until the corresponding phase is in the tree with its test — and everything here is sim-only until the M5 hardware bring-up.
+M1, M2 and M3 are in the tree with their tests; **M4–M5 are still a plan, not implementation.** This doc keeps SkateArm's honesty rules: each phase states its sim-vs-hardware boundary, ships with a verification test that lands in the repo, and claims nothing until its metric is committed. Nothing in M4–M5 should be described as done, in progress, or working until the corresponding phase is in the tree with its test — and everything here is sim-only until the M5 hardware bring-up.
 
 ---
 
