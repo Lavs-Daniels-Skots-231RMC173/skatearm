@@ -116,6 +116,20 @@ class RobotBridge:
         _cmask[names.LEFT_GRIPPER] = False        # a grasp spikes torque on purpose
         _cmask[names.RIGHT_GRIPPER] = False
         self.contact_mask = _cmask                # arm structural joints only
+        # contact RESPONSE mode: "stop" (latch the soft-stop above — default and
+        # unchanged) or "compliant" — instead of latching, YIELD the TCP via an
+        # M3 Cartesian admittance driven by the estimated contact force, and
+        # return when it is released. Opt-in; default keeps the exact old
+        # behaviour. (The law mirrors sim/admittance.py; inlined so the cockpit
+        # stays self-contained for the robot.)
+        self.contact_mode = "stop"
+        self.compliant_K = np.array([600.0, 600.0, 600.0])   # N/m per world axis
+        self.compliant_Mv = np.array([2.0, 2.0, 2.0])        # virtual mass
+        self.compliant_D = 2.0 * np.sqrt(self.compliant_K * self.compliant_Mv)  # critical
+        self.compliant_max = 0.05                            # m, per-axis yield clamp
+        self._adm_e = {"left": np.zeros(3), "right": np.zeros(3)}
+        self._adm_ev = {"left": np.zeros(3), "right": np.zeros(3)}
+        self._adm_F0 = {}                                    # per-arm force baseline
         self.jog_dir = np.zeros(names.N_JOINTS)   # -1/0/+1 per joint
         self.jog_vel = np.zeros(names.N_JOINTS)   # rad/s, accel-limited toward jog_dir*rate
         self.kin = kin or {}               # {"left"/"right": ArmKinematics}
@@ -414,6 +428,45 @@ class RobotBridge:
         self.contact_joint = None
         self._tau_ref = None                 # re-baseline from the next sample
         self._contact_run = 0
+
+    # -- compliant contact response (M3 admittance) ----------------------------
+    def set_contact_mode(self, mode):
+        """Select the contact response: ``"stop"`` (latch a soft-stop — default)
+        or ``"compliant"`` (yield the TCP via a Cartesian admittance). Resets the
+        admittance state and rebaselines the force so the yield starts from zero.
+        Returns the mode in effect."""
+        if mode not in ("stop", "compliant"):
+            return self.contact_mode
+        self.contact_mode = mode
+        for a in ("left", "right"):
+            self._adm_e[a] = np.zeros(3)
+            self._adm_ev[a] = np.zeros(3)
+        self._adm_F0 = {}
+        return self.contact_mode
+
+    def _compliant_yield(self, forces, dt):
+        """Compliant contact response: instead of latching a stop, advance each
+        arm's Cartesian admittance (Mv·e'' + D·e' + K·e = F_ext) from the
+        estimated TCP contact force and apply the per-tick offset change as a
+        Cartesian nudge, so the arm yields (e → F/K) and returns when released.
+        F_ext is baselined at mode-engage so gravity-hold does not drive it."""
+        if not forces or self.targ is None:
+            return
+        for arm in self.kin:
+            info = forces.get(arm)
+            if info is None:
+                continue
+            raw = np.asarray(info["f"], dtype=float)
+            if arm not in self._adm_F0:
+                self._adm_F0[arm] = raw          # baseline the resting (gravity) force
+                continue
+            f = raw - self._adm_F0[arm]
+            e0 = self._adm_e[arm].copy()
+            ev = self._adm_ev[arm] + dt * ((f - self.compliant_D * self._adm_ev[arm]
+                                            - self.compliant_K * e0) / self.compliant_Mv)
+            e = np.clip(e0 + dt * ev, -self.compliant_max, self.compliant_max)
+            self._adm_e[arm], self._adm_ev[arm] = e, ev
+            self._cart_one(arm, e - e0)          # ride the yield on the current target
 
     # -- collision guard -------------------------------------------------------
     def _guard_ok(self, prev):
@@ -937,10 +990,13 @@ class RobotBridge:
                    and self.targ is not None and self.link.connected)
         if self.contact_reflex and base_ok and not self.contact_tripped:
             if self._contact_update(st.dof_torque(), st.dof_vel()):
-                self._trip_contact()
+                if self.contact_mode != "compliant":
+                    self._trip_contact()          # "stop" (default): latch, unchanged
         elif not base_ok:
             self._tau_ref = None
             self._contact_run = 0
+        if self.contact_mode == "compliant" and base_ok and not self.contact_tripped:
+            self._compliant_yield(self._tcp_force(st), dt)   # yield instead of latching
 
         live = base_ok and not self.contact_tripped
 
@@ -1048,6 +1104,7 @@ class RobotBridge:
             "routing": (self.plan_nodes is not None
                         or (self.seq_route is not None and len(self.seq_route) > 1)),
             "contact": {"on": self.contact_reflex,
+                        "mode": self.contact_mode,
                         "tripped": self.contact_tripped,
                         "joint": self.contact_joint},
             "tools": {a: {"name": self.tool_names.get(a, "flange"),
