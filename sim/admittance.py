@@ -33,6 +33,17 @@ import numpy as np
 import mujoco
 
 
+def admittance_advance(e, ev, F, K, D, Mv, dt):
+    """One symplectic-Euler step of the diagonal admittance ODE
+    ``Mv·e'' + D·e' + K·e = F`` (velocity updated first, then position — more
+    stable than explicit Euler). Pure and stateless: shared by the single-arm
+    ``Admittance`` and the bimanual ``CompliantCarry`` so the control law has one
+    definition. e, ev, F, K, D, Mv are per-axis arrays; returns (e, ev)."""
+    ev = ev + dt * ((F - D * ev - K * e) / Mv)
+    e = e + dt * ev
+    return e, ev
+
+
 class Admittance:
     """Task-space admittance for one ``Arm``. Construct at the pose to hold, then
     call ``step()`` each control cycle (or ``run(seconds)``). ``K``/``D``/``Mv``
@@ -105,10 +116,8 @@ class Admittance:
             self.x0 = np.asarray(x0, float)
         F = (np.asarray(f_override, float) if f_override is not None
              else self.ext_wrench())
-        # symplectic Euler on  Mv·e'' + D·e' + K·e = F  (velocity, then position)
-        acc = (F - self.D * self.ev - self.K * self.e) / self.Mv
-        self.ev = self.ev + self.dt * acc
-        self.e = self.e + self.dt * self.ev
+        self.e, self.ev = admittance_advance(self.e, self.ev, F, self.K,
+                                             self.D, self.Mv, self.dt)
         self.e = np.clip(self.e, -self.max_offset, self.max_offset)
         q, _ = self.arm.ik_step6(self.x0 + self.e)
         self.arm.set_ctrl(q)

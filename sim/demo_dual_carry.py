@@ -27,8 +27,10 @@ GIF = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 GY, GZ, WX = 0.392, 0.16, 0.085      # grasp y, z; natural wrist x-separation (measured)
 
 
-def build_scene():
-    tree = ET.parse(os.path.join(MODEL_DIR, "skt_v3_collision.xml"))
+def build_scene(model_dir=None):
+    model_dir = model_dir or MODEL_DIR
+    scene = os.path.join(model_dir, "skt_v3_carry.xml")
+    tree = ET.parse(os.path.join(model_dir, "skt_v3_collision.xml"))
     root = tree.getroot()
     def fb(n):
         for b in root.iter("body"):
@@ -59,8 +61,8 @@ def build_scene():
         w.set("body2", "bar"); w.set("active", "false"); w.set("solref", "0.02 1")
     wf = ET.SubElement(eq, "weld"); wf.set("name", "wfix"); wf.set("body1", "world")
     wf.set("body2", "bar"); wf.set("active", "false"); wf.set("solref", "0.005 1")
-    tree.write(SCENE)
-    return SCENE
+    tree.write(scene)
+    return scene
 
 
 def weld_loads(m, d):
@@ -86,8 +88,8 @@ def engage(m, d, nm):
 
 
 def main():
-    build_scene()
-    m = mujoco.MjModel.from_xml_path(SCENE); d = mujoco.MjData(m)
+    scene = build_scene(MODEL_DIR)
+    m = mujoco.MjModel.from_xml_path(scene); d = mujoco.MjData(m)
     bar = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "bar")
     bd0, bdn = m.body_dofadr[bar], m.body_dofnum[bar]
     gmask = np.ones(m.nv); gmask[bd0:bd0 + bdn] = 0.0; gbuf = np.zeros(m.nv)
