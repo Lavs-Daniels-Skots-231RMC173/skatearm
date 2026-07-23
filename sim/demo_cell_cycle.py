@@ -33,7 +33,7 @@ from sequencer import Cell, run_cycle  # noqa: E402
 STEP_TITLES = {
     "S0": "S0  HOME / PARTS CHECK", "S1": "S1  APPROACH + GRASP",
     "S2": "S2  CARRY TO FIXTURE", "S3": "S3  ALIGN PEG / POCKET",
-    "S4": "S4  INSERT (FORCE-GUARDED)", "S5": "S5  QC VERIFY",
+    "S4": "S4  INSERT (FORCE-REGULATED)", "S5": "S5  QC VERIFY",
     "S6": "S6  PLACE TO BIN", "S7": "S7  CYCLE COMPLETE",
 }
 TOTAL_S = 43.0
@@ -87,7 +87,7 @@ def main():
             return f"align err: {cell.align_err_xy()*1000:5.1f} mm"
         if step == "S4":
             return (f"depth: {max(0, cell.insertion_depth())*1000:5.1f} / 18.0 mm"
-                    f"   tau: {cell.tau_R():4.1f} Nm")
+                    f"   [force-regulated]")
         if step == "S5":
             for e in reversed(cell.log):
                 if e["step"] == "S5" and "result" in e:
