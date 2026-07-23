@@ -58,6 +58,7 @@ On a real **SO-101 / SO-ARM101 follower-leader arm pair** I ran the whole physic
 | Drive the robot (twin or real) from a browser | [Skate Commander](#skate-commander--web-cockpit) |
 | Connect a ROS 2 / MoveIt 2 stack to a Skate | [skate_ros2](#skate_ros2--the-wire) |
 | See the autonomous assembly cell | [Work-cell](#autonomous-work-cell-phase-1--complete) |
+| See contact-force manipulation (F/T · compliance · gripper) | [Manipulation core](#manipulation-core-contact-force-control) |
 | Get the control-ready model & collision layer | [Sim foundations](#sim-foundations-phase-0) |
 | Run it yourself | [Quick start](#quick-start-simulation) |
 
@@ -509,6 +510,34 @@ The demonstrator task, end to end in simulation: the left arm fixtures a base pa
 | Accept rate | functional — only 2 cycles logged so far (sample too small for a true rate; tracked live on the dashboard) |
 
 Dashboard live previews: **[overview](https://raw.githack.com/dsl-robotics/skatearm/main/dashboard/preview_overview.html)** · **[cycle detail](https://raw.githack.com/dsl-robotics/skatearm/main/dashboard/preview_cycle.html)** — code in [dashboard/](dashboard/), sequencer in [sim/sequencer.py](sim/sequencer.py), QC in [sim/qc.py](sim/qc.py).
+
+<sub>→ Phase 1's τ-watchdog insert and weld grasp are since replaced by real contact-force control — see the **[Manipulation core](#manipulation-core-contact-force-control)** below.</sub>
+
+## Manipulation core (contact-force control)
+
+> **The review's single largest gap — now closed in sim.** Phase 1's insert was a *scripted* descent guarded by a joint-torque (τ) watchdog, and grasping was a magnetic *weld* stand-in. The manipulation core (Phase 1.5) replaces both with genuine **contact-force manipulation** — a wrist force/torque sensor, a **force-regulated** insertion, **Cartesian compliant** (admittance) control, and a **real actuated gripper** — each sim-first, each shipped with a CI test. Full scope & honesty rules: **[docs/MANIPULATION.md](docs/MANIPULATION.md)**.
+
+<div align="center">
+  <img src="docs/img/push_and_yield.gif" width="370" alt="M3 admittance: an external push on the wrist makes the arm yield and spring back to its pose">
+  <img src="docs/img/gripper_arm_carry.gif" width="370" alt="M4 gripper: the wrist grasps a part under grasp-force control and carries it, no weld">
+  <br>
+  <em>Left — <strong>M3 compliant control</strong>: an external push on the wrist makes the TCP <em>yield</em> at a commanded stiffness and return. Right — <strong>M4 actuated gripper</strong>: the wrist grips a part under grasp-force control and carries it, held by <strong>friction, no weld</strong>.</em>
+</div>
+
+| Phase | What shipped | Key result (sim) | In CI |
+|---|---|---|---|
+| **M1** · wrist F/T sensing | a 6-axis force/torque sensor on each wrist — the real contact wrench, not the τ proxy | sensor vs analytic **< 0.05 N / N·m** | [test_ft_sensor.py](sim/test_ft_sensor.py) |
+| **M2** · force-regulated insertion | axial admittance + spiral bore-search — replaces the "1.4 mm/cycle + τ-watchdog" descent | misalignment tolerance **0–4 mm 6/6**, 6 mm 5/6 (open-loop ≤1/6); θ-tilt ≤9° levelled to <2°; round **H9** bore; peak force ~3 N | [test_insertion.py](sim/test_insertion.py) · [eval](sim/eval_insertion.py) |
+| **M3** · Cartesian compliance | TCP admittance (yield-at-stiffness), a bimanual compliant carry, and a cockpit *compliant* contact mode | **e = F/K** across a 16× stiffness sweep; a real +8 N push yields the TCP ~21 mm and returns | [test_admittance.py](sim/test_admittance.py) · [test_carry.py](sim/test_carry.py) |
+| **M4** · actuated gripper | parallel-jaw gripper, grasp-force control, a grasp-slip curve, and a weld-free grasp-and-carry on the arm | grasp tracks target **2–5 N**; slip payload grows with grasp force; part carried with **~5 mm drift, no weld** | [test_gripper.py](sim/test_gripper.py) · [test_gripper_arm.py](sim/test_gripper_arm.py) |
+
+<div align="center">
+  <img src="docs/img/gripper_grasp.gif" width="330" alt="M4 grasp-force control: the jaws close on a part and hold it by friction, then release">
+  <br>
+  <sub><strong>M4 grasp-force control</strong> — the jaws close to a commanded force and hold the part by <strong>friction alone</strong> (no weld), then open to release it.</sub>
+</div>
+
+Only **M5 — hardware bring-up** remains, and it is genuinely gated on the physical Skate arriving: the sim controllers are identical on hardware, only the wrench *source* changes (a real wrist F/T sensor or a joint-torque estimator behind the M1 interface).
 
 ## Sim foundations (Phase 0)
 
