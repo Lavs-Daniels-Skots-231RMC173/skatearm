@@ -16,6 +16,7 @@ import mujoco
 import numpy as np
 
 from primitives import reach, hold, move_joints, grasp, release, Arm
+from insertion import Insertion
 
 
 class Cell:
@@ -160,7 +161,10 @@ def run_cycle(cell, steps=None, state=None):
         cell.event("S3", "align", err_xy=cell.align_err_xy())
         for _ in range(400):
             err_xy = (cell.pocket_top() - cell.part_pose("peg"))[:2]
-            zerr = (cell.pocket_top()[2] + 0.030) - cell.peg_bottom()[2]
+            # stage the peg ~12mm above the opening — the M2 force-regulated
+            # insertion (S4) does the final descent, so hand it a short approach
+            # gap (its deep_gate is 40mm; the old open-loop descent started 30mm up)
+            zerr = (cell.pocket_top()[2] + 0.012) - cell.peg_bottom()[2]
             q, _ = armR.ik_step6(armR.ee_pos() + np.array([err_xy[0], err_xy[1], zerr]))
             armR.set_ctrl(q)
             qL, _ = armL.ik_step6(np.array([0.0, 0.33, 0.21]))
@@ -173,31 +177,25 @@ def run_cycle(cell, steps=None, state=None):
                 break
         cell.event("S3", "aligned -> S4", err_xy=cell.align_err_xy())
 
-    # ----- S4: force-guarded insertion -----
+    # ----- S4: force-regulated insertion (M2) -----
     if "S4" in steps:
-        tau0 = cell.tau_R()
-        cell.event("S4", "insert (guarded)", tau_baseline=tau0)
-        aborted = False
-        for _ in range(1500):
-            err_xy = (cell.pocket_top() - cell.part_pose("peg"))[:2]
-            if cell.insertion_depth() >= 0.018:
-                break
-            q, _ = armR.ik_step6(armR.ee_pos()
-                                 + np.array([err_xy[0] * 0.8, err_xy[1] * 0.8, -0.0014]))
-            armR.set_ctrl(q)
-            qL, _ = armL.ik_step6(np.array([0.0, 0.33, 0.21]))
-            armL.set_ctrl(qL)
-            for _ in range(4):
-                mujoco.mj_step(m, d)
-            if on_frame:
-                on_frame()
-            if cell.tau_R() > tau0 + 25:   # guard: jam
-                aborted = True
-                break
+        # the M2 controller regulates the wrist contact force and spiral-searches
+        # the bore, replacing the open-loop "1.4mm/cycle + tau watchdog" descent.
+        # It drives the right arm; the left keeps holding the base at the meet
+        # point (hold_arms) so the base stays put under the insertion reaction.
+        center = armR.ee_pos()[:2].copy()          # wrist xy aligning the peg over the bore
+        cell.event("S4", "insert (force-regulated)",
+                   assumed_center=[round(float(v), 4) for v in center])
+        res = Insertion(m, d, armR, center,
+                        hold_arms=[(armL, [0.0, 0.33, 0.21])],
+                        on_step=on_frame).run(search=True)
+        aborted = res["aborted"] or not res["seated"]
         release(m, d, "right")
         hold(m, d, 0.4, on_frame=on_frame)
-        cell.event("S4", "insert done -> S5" if not aborted else "TAU GUARD -> reject",
-                   depth_mm=cell.insertion_depth() * 1000, aborted=aborted)
+        cell.event("S4", "insert done -> S5" if not aborted else "FORCE GUARD -> reject",
+                   depth_mm=round(cell.insertion_depth() * 1000, 2), aborted=aborted,
+                   seated=res["seated"], peak_wrench_n=res["peak_wrench_n"],
+                   cycles=res["cycles"])
         cell.qc_jam = aborted
 
     # ----- S5: retreat right + CAMERA QC verify (oracle kept as cross-check) -----

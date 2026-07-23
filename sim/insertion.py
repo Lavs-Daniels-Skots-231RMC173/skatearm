@@ -46,7 +46,7 @@ class Insertion:
                  deep_gate=0.040, seat_depth=0.013,
                  drop_win=16, drop_eps=1.2e-3, dwell=22,
                  pause_max=70, still_win=40, still_tol=4e-4,
-                 substeps=4, max_cycles=2600):
+                 substeps=4, max_cycles=2600, hold_arms=None, on_step=None):
         self.m, self.d, self.arm = m, d, arm
         self.center = np.asarray(center_xy, float)[:2]
         self.f_contact, self.f_target, self.w_abort = f_contact, f_target, w_abort
@@ -66,14 +66,21 @@ class Insertion:
                              "model with make_control_model.py (M1)")
         self._f_adr = m.sensor_adr[sid]
         self._site = arm.site
-        # gravity feed-forward on THIS arm's hinge dofs only. reach() comps every
-        # hinge because it drives both arms; here only the working arm moves, so
-        # comping the idle arm would double up on its own servo hold and drift it.
+        # hold_arms: other arm(s) to keep servoing to a fixed target every cycle —
+        # used in the bimanual sequencer where the left arm must keep holding the
+        # base while the right inserts. on_step: per-cycle callback (e.g. render).
+        self.hold_arms = list(hold_arms or [])   # [(arm, target_xyz), ...]
+        self.on_step = on_step
+        # gravity feed-forward over the WORKING arm's hinge dofs plus any held
+        # arms'. reach() comps every hinge because it drives both arms; here only
+        # these arms are actuated, so comping an idle arm would double up on its
+        # own servo hold and drift it.
         self._gff = np.zeros(m.nv)
         self._gmask = np.zeros(m.nv)
-        for i in arm.vadr:
-            if m.jnt_type[m.dof_jntid[i]] == mujoco.mjtJoint.mjJNT_HINGE:
-                self._gmask[i] = 1.0
+        for a in [arm] + [h[0] for h in self.hold_arms]:
+            for i in a.vadr:
+                if m.jnt_type[m.dof_jntid[i]] == mujoco.mjtJoint.mjJNT_HINGE:
+                    self._gmask[i] = 1.0
 
     # --- signals -------------------------------------------------------------
     def _wrench_world(self):
@@ -90,11 +97,16 @@ class Insertion:
     def _step(self, target):
         q, _ = self.arm.ik_step6(target)
         self.arm.set_ctrl(q)
+        for a, tgt in self.hold_arms:            # keep the other arm(s) holding (bimanual)
+            qh, _ = a.ik_step6(np.asarray(tgt, float))
+            a.set_ctrl(qh)
         gff = self._grav_ff()
         for _ in range(self.substeps):
             self.d.qfrc_applied[:] = gff
             mujoco.mj_step(self.m, self.d)
         self.d.qfrc_applied[:] = 0.0
+        if self.on_step is not None:
+            self.on_step()
 
     # --- controller ----------------------------------------------------------
     def run(self, search=True):
