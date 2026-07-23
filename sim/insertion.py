@@ -28,6 +28,8 @@ is an oracle used only for *scoring* the result in the eval, not for control.
 Sim ↔ hardware: the controller is identical on hardware; only the wrench *source*
 differs (a real wrist F/T sensor or a joint-torque estimator behind the M1 interface).
 """
+from collections import deque
+
 import numpy as np
 import mujoco
 
@@ -42,27 +44,36 @@ class Insertion:
                  vz=3e-4, kf=2.2e-4, lead_cap=0.024,
                  r_max=6e-3, pitch=0.6e-3, search_rate=0.3,
                  deep_gate=0.040, seat_depth=0.013,
-                 drop_win=16, drop_eps=1.2e-3,
+                 drop_win=16, drop_eps=1.2e-3, dwell=22,
                  pause_max=70, still_win=40, still_tol=4e-4,
-                 settle=40, substeps=4, max_cycles=2600):
+                 substeps=4, max_cycles=2600):
         self.m, self.d, self.arm = m, d, arm
         self.center = np.asarray(center_xy, float)[:2]
         self.f_contact, self.f_target, self.w_abort = f_contact, f_target, w_abort
         self.vz, self.kf, self.lead_cap = vz, kf, lead_cap
         self.r_max, self.pitch, self.search_rate = r_max, pitch, search_rate
         self.deep_gate, self.seat_depth = deep_gate, seat_depth
-        self.drop_win, self.drop_eps = drop_win, drop_eps
+        self.drop_win, self.drop_eps, self.dwell = drop_win, drop_eps, dwell
         self.pause_max, self.still_win, self.still_tol = pause_max, still_win, still_tol
-        self.settle, self.substeps, self.max_cycles = settle, substeps, max_cycles
-        # M1 wrist wrench of this arm
+        self.substeps, self.max_cycles = substeps, max_cycles
+        # M1 wrist wrench of this arm — fail loud if the F/T sensor is absent
+        # (mj_name2id returns -1, and sensor_adr[-1] would silently read the wrong
+        # sensor), rather than regulating force on garbage.
         fname = f"ee_{arm.side}_force"
-        self._f_adr = m.sensor_adr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SENSOR, fname)]
+        sid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SENSOR, fname)
+        if sid < 0:
+            raise ValueError(f"missing wrist F/T sensor {fname!r} — rebuild the "
+                             "model with make_control_model.py (M1)")
+        self._f_adr = m.sensor_adr[sid]
         self._site = arm.site
-        # gravity feed-forward mask (hinge dofs only), like reach()
-        self._hinge = np.array(
-            [m.jnt_type[m.dof_jntid[i]] == mujoco.mjtJoint.mjJNT_HINGE
-             for i in range(m.nv)], float)
+        # gravity feed-forward on THIS arm's hinge dofs only. reach() comps every
+        # hinge because it drives both arms; here only the working arm moves, so
+        # comping the idle arm would double up on its own servo hold and drift it.
         self._gff = np.zeros(m.nv)
+        self._gmask = np.zeros(m.nv)
+        for i in arm.vadr:
+            if m.jnt_type[m.dof_jntid[i]] == mujoco.mjtJoint.mjJNT_HINGE:
+                self._gmask[i] = 1.0
 
     # --- signals -------------------------------------------------------------
     def _wrench_world(self):
@@ -74,7 +85,7 @@ class Insertion:
         self.d.qvel[:] = 0.0
         mujoco.mj_rne(self.m, self.d, 0, self._gff)
         self.d.qvel[:] = qv
-        return self._gff * self._hinge
+        return self._gff * self._gmask
 
     def _step(self, target):
         q, _ = self.arm.ik_step6(target)
@@ -96,8 +107,9 @@ class Insertion:
         off = np.zeros(2)
         frozen = False
         pause_k = 0
+        dwell_k = 0
         contact_z = None
-        z_hist = []
+        z_hist = deque(maxlen=max(self.drop_win, self.still_win) + 1)
         peak_w = 0.0
         aborted = False
         seated = False
@@ -111,19 +123,24 @@ class Insertion:
                 break
             f_ax = float(-F[2])                    # +ve = base pushing back up on a descent
             z_act = float(arm.ee_pos()[2])
-            z_hist.append(z_act)
 
-            # first solid contact latches the reference the seat depth is measured from
+            # first solid contact latches the seat-depth reference AND restarts the
+            # drop history, so the search below only ever measures motion that
+            # happened AFTER contact (not the fast free-descent that precedes it).
             if contact_z is None and f_ax > self.f_contact:
                 contact_z = z_act
+                z_hist.clear()
+            z_hist.append(z_act)
 
             # axial admittance on the accumulating z-setpoint
             z_cmd += float(np.clip(self.kf * (f_ax - self.f_target), -self.vz, self.vz))
             z_cmd = max(z_cmd, z_act - self.lead_cap)   # never lead the actual by > lead_cap
             z_cmd = min(z_cmd, z0 + 5e-4)               # and never command upward past the start
 
-            # spiral hole-search with pause-and-seat
-            if search:
+            # spiral hole-search with pause-and-seat — ONLY after contact. Before
+            # contact the peg drops straight down at the assumed centre; spiralling
+            # in free air would just carry it off the hole before it ever arrives.
+            if search and contact_z is not None:
                 dropping = (len(z_hist) > self.drop_win
                             and (z_hist[-self.drop_win] - z_act) > self.drop_eps)
                 if frozen:
@@ -133,13 +150,21 @@ class Insertion:
                     if pause_k >= self.pause_max or (still and not dropping):
                         frozen = False           # stalled on the rim → resume the spiral
                         pause_k = 0
-                elif dropping and contact_z is not None:
+                elif dropping:
                     frozen = True                # peg is dropping in → hold xy and let it seat
                     pause_k = 0
-                if not frozen and r < self.r_max + 1e-9:
-                    theta += self.search_rate
-                    r = min(self.r_max, r + self.pitch)
-                    off = r * np.array([np.cos(theta), np.sin(theta)])
+                    dwell_k = 0
+                # step the spiral only after DWELLing at the current point long
+                # enough for the peg to seat if it is over the bore (the drop
+                # detector needs ~drop_win cycles of descent to fire) — otherwise
+                # the search sweeps the peg past the hole before it can drop in.
+                if not frozen:
+                    dwell_k += 1
+                    if dwell_k >= self.dwell:
+                        dwell_k = 0
+                        theta += self.search_rate
+                        r = min(self.r_max, r + self.pitch)
+                        off = r * np.array([np.cos(theta), np.sin(theta)])
 
             self._step(np.array([self.center[0] + off[0],
                                  self.center[1] + off[1], z_cmd]))
