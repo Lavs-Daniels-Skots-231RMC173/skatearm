@@ -1,26 +1,27 @@
 """M4 (scoped) — generate skt_v3_gripper.xml: a self-contained actuated
-parallel-jaw gripper grasping a peg by FRICTION (no weld).
+parallel-jaw gripper grasping a rectangular part by FRICTION (no weld).
 
-This is the opt-in M4 slice: it proves the gripper *mechanism* — two pads on
-coupled prismatic joints, a force (motor) actuator whose command sets the grasp
-force, real friction and a touch sensor reading the grasp normal force — without
+The opt-in M4 slice: it proves the gripper *mechanism* — two pads on coupled
+prismatic joints, a force (motor) actuator whose command sets the grasp force,
+real friction and a touch sensor reading the grasp normal force — without
 touching the arm's control/collision/cell models (so every existing test stays
-green). The peg is pinned to the world by an equality weld only while the jaws
-close; releasing the pin leaves the peg held by friction alone. The full M4
-(jaws on the wrist's a7, weld-free carry through the cycle, grasp-slip curve)
-builds on this.
+green). The part is pinned to the world by an equality weld only while the jaws
+close; releasing the pin leaves it held by friction alone. Flat pad-on-face
+contact (a box part) makes the friction hold scale with the grasp force, so the
+grasp-slip curve (payload-until-slip vs grasp force) is physically sensible. The
+full M4 (jaws on the wrist's a7, weld-free carry through the cycle) builds on this.
 
     python make_gripper_scene.py /path/to/skate_teleop/skt_v3
 """
 import os
 import sys
 
-# geometry (m): peg D20 like the cell peg; jaws open ~32 mm, close onto the peg.
-PEG_R, PEG_HH = 0.010, 0.025
+# geometry (m): the grasped part is a rectangular workpiece; jaws open ~32 mm.
+PART_HX, PART_HY, PART_HZ = 0.010, 0.020, 0.025    # box part half-sizes (x = grip axis)
 JAW_HW = 0.004                     # pad half-width along the closing (x) axis
 JAW_OPEN = 0.020                   # each jaw body's rest offset from centre (±)
 MOUNT_Z = 0.30
-MU = "1.2 0.02 0.001"             # sticky pads/peg so a modest squeeze holds
+MU = "1.6 0.2 0.02"               # tangential + torsional + rolling friction
 
 
 def scene_xml():
@@ -29,7 +30,7 @@ def scene_xml():
   <visual><global offwidth="1024" offheight="768"/>
     <headlight ambient="0.4 0.4 0.4" diffuse="0.6 0.6 0.6"/></visual>
   <default>
-    <geom solref="0.01 1" solimp="0.9 0.95 0.001"/>
+    <geom solref="0.01 1" solimp="0.9 0.95 0.001" condim="4"/>
   </default>
   <worldbody>
     <light pos="0.2 0.2 1" dir="-0.2 -0.2 -1" diffuse="0.7 0.7 0.7"/>
@@ -50,15 +51,15 @@ def scene_xml():
         <site name="padR_s" type="box" size="{JAW_HW+0.002} 0.021 0.021"/>
       </body>
     </body>
-    <body name="peg" pos="0 0 {MOUNT_Z-0.03}">
+    <body name="part" pos="0 0 {MOUNT_Z-0.03}">
       <freejoint/>
-      <geom name="peg" type="cylinder" size="{PEG_R} {PEG_HH}" rgba="0.9 0.6 0.15 1"
-            density="950" friction="{MU}"/>
+      <geom name="part" type="box" size="{PART_HX} {PART_HY} {PART_HZ}"
+            rgba="0.9 0.6 0.15 1" density="950" friction="{MU}"/>
     </body>
   </worldbody>
   <equality>
     <joint name="couple" joint1="jR" joint2="jL" polycoef="0 -1 0 0 0"/>
-    <weld name="pin" body1="peg" active="true" solref="0.005 1"/>
+    <weld name="pin" body1="part" active="true" solref="0.005 1"/>
   </equality>
   <actuator>
     <motor name="grip" joint="jL" ctrlrange="-60 60" gear="1"/>

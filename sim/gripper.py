@@ -20,7 +20,7 @@ class Gripper:
         self._f = m.sensor_adr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SENSOR, "grip_force")]
         self._j = m.sensor_adr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SENSOR, "jaw")]
         self.pin = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_EQUALITY, "pin")
-        self.peg = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "peg")
+        self.part = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "part")
         self.substeps = substeps
 
     # --- signals ---
@@ -32,8 +32,8 @@ class Gripper:
         """Jaw joint position (m); larger = more closed."""
         return float(self.d.sensordata[self._j])
 
-    def peg_pos(self):
-        return self.d.xpos[self.peg].copy()
+    def part_pos(self):
+        return self.d.xpos[self.part].copy()
 
     # --- actions ---
     def _run(self, cycles):
@@ -72,4 +72,23 @@ class Gripper:
     def holds(self, z_ref, drop_tol=0.03):
         """True if the part is still grasped (has not dropped below z_ref by more
         than drop_tol)."""
-        return bool(self.peg_pos()[2] > z_ref - drop_tol)
+        return bool(self.part_pos()[2] > z_ref - drop_tol)
+
+    def slip_payload(self, z_grip, ramp=0.25, step_n=40, max_pull=30.0):
+        """Grasp-slip probe: with the part already grasped (pin released), ramp a
+        downward payload force on it until it escapes the jaws, and return the
+        payload (N) at which it slips out — the grasp's holding capacity. Returns
+        None if it holds all the way to `max_pull`. Higher grasp force -> higher
+        slip payload (flat pad-on-face contact makes the hold scale with force)."""
+        escape_z = z_grip - 0.045
+        pull = 0.0
+        while pull < max_pull:
+            pull += ramp
+            self.d.xfrc_applied[self.part, 2] = -pull
+            for _ in range(step_n):
+                mujoco.mj_step(self.m, self.d)
+            if self.part_pos()[2] < escape_z:
+                self.d.xfrc_applied[self.part, :] = 0.0
+                return round(pull, 2)
+        self.d.xfrc_applied[self.part, :] = 0.0
+        return None

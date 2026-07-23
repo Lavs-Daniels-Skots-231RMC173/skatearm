@@ -59,4 +59,4 @@ run(55, -8.0)                                   # open -> peg drops
 os.makedirs(os.path.dirname(GIF), exist_ok=True)
 imgs = [Image.fromarray(f) for f in frames]
 imgs[0].save(GIF, save_all=True, append_images=imgs[1:], duration=55, loop=0)
-print(f"wrote {GIF} ({len(frames)} frames), peg z={g.peg_pos()[2]:.3f}")
+print(f"wrote {GIF} ({len(frames)} frames), part z={g.part_pos()[2]:.3f}")
