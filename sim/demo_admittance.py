@@ -26,8 +26,8 @@ wb = m.site_bodyid[arm.site]
 ad = Admittance(m, d, arm, K=(300., 300., 300.), zeta=1.0)   # softer for a visible yield
 ren = mujoco.Renderer(m, 384, 512)
 cam = mujoco.MjvCamera()
-cam.lookat[:] = [0.12, 0.40, 0.17]
-cam.distance, cam.azimuth, cam.elevation = 1.15, 90, -10
+cam.lookat[:] = [0.14, 0.41, 0.16]
+cam.distance, cam.azimuth, cam.elevation = 0.82, 90, -8
 frames = []
 
 
@@ -46,11 +46,11 @@ def phase(cycles, fext, every=3):
     d.xfrc_applied[wb, :] = 0.0
 
 
-phase(24, [0, 0, 0])          # hold nominal
-phase(55, [12, 0, 0])         # push +x -> yield (swings right)
-phase(75, [0, 0, 0])          # release -> return
-phase(55, [-12, 0, 0])        # push -x -> yield (swings left)
-phase(85, [0, 0, 0])          # release -> return
+phase(22, [0, 0, 0])          # hold nominal
+phase(55, [16, 0, 0])         # push +x -> yield (swings right)
+phase(70, [0, 0, 0])          # release -> return
+phase(55, [-16, 0, 0])        # push -x -> yield (swings left)
+phase(80, [0, 0, 0])          # release -> return
 
 os.makedirs(os.path.dirname(GIF), exist_ok=True)
 imgs = [Image.fromarray(f) for f in frames]

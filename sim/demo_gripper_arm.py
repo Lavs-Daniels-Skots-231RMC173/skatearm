@@ -21,8 +21,8 @@ GIF = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
 m = mujoco.MjModel.from_xml_path(make(MODEL_DIR))
 ren = mujoco.Renderer(m, 372, 496)
 cam = mujoco.MjvCamera()
-cam.lookat[:] = [0.13, 0.43, 0.12]
-cam.distance, cam.azimuth, cam.elevation = 0.58, 34, -13
+cam.lookat[:] = [0.13, 0.43, 0.10]
+cam.distance, cam.azimuth, cam.elevation = 0.70, 26, -26
 frames = []
 n = [0]
 
