@@ -519,9 +519,9 @@ Dashboard live previews: **[overview](https://raw.githack.com/dsl-robotics/skate
 
 <div align="center">
   <img src="docs/img/push_and_yield.gif" width="370" alt="M3 admittance: an external push on the wrist makes the arm yield and spring back to its pose">
-  <img src="docs/img/gripper_arm_carry.gif" width="370" alt="M4 gripper: the wrist grasps a part under grasp-force control and carries it, no weld">
+  <img src="docs/img/gripper_arm_place.gif" width="370" alt="M4 gripper: the wrist grasps a part, carries it and places it in a bin, no weld">
   <br>
-  <em>Left — <strong>M3 compliant control</strong>: an external push on the wrist makes the TCP <em>yield</em> at a commanded stiffness and return. Right — <strong>M4 actuated gripper</strong>: the wrist grips a part under grasp-force control and carries it, held by <strong>friction, no weld</strong>.</em>
+  <em>Left — <strong>M3 compliant control</strong>: an external push on the wrist makes the TCP <em>yield</em> at a commanded stiffness and return. Right — <strong>M4 actuated gripper</strong>: a full weld-free <strong>pick-and-place</strong> — grasp a part under grasp-force control, carry it, and open the jaws to place it in the bin, held by <strong>friction</strong> throughout.</em>
 </div>
 
 | Phase | What shipped | Key result (sim) | In CI |
@@ -529,7 +529,7 @@ Dashboard live previews: **[overview](https://raw.githack.com/dsl-robotics/skate
 | **M1** · wrist F/T sensing | a 6-axis force/torque sensor on each wrist — the real contact wrench, not the τ proxy | sensor vs analytic **< 0.05 N / N·m** | [test_ft_sensor.py](sim/test_ft_sensor.py) |
 | **M2** · force-regulated insertion | axial admittance + spiral bore-search — replaces the "1.4 mm/cycle + τ-watchdog" descent | misalignment tolerance **0–4 mm 6/6**, 6 mm 5/6 (open-loop ≤1/6); θ-tilt ≤9° levelled to <2°; round **H9** bore; peak force ~3 N | [test_insertion.py](sim/test_insertion.py) · [eval](sim/eval_insertion.py) |
 | **M3** · Cartesian compliance | TCP admittance (yield-at-stiffness), a bimanual compliant carry, and a cockpit *compliant* contact mode | **e = F/K** across a 16× stiffness sweep; a real +8 N push yields the TCP ~21 mm and returns | [test_admittance.py](sim/test_admittance.py) · [test_carry.py](sim/test_carry.py) |
-| **M4** · actuated gripper | parallel-jaw gripper, grasp-force control, a grasp-slip curve, and a weld-free grasp-and-carry on the arm | grasp tracks target **2–5 N**; slip payload grows with grasp force; part carried with **~5 mm drift, no weld** | [test_gripper.py](sim/test_gripper.py) · [test_gripper_arm.py](sim/test_gripper_arm.py) |
+| **M4** · actuated gripper | parallel-jaw gripper, grasp-force control, a grasp-slip curve, and a weld-free grasp-carry-**place** on the arm | grasp tracks target **2–5 N**; slip payload grows with grasp force; part carried (~5 mm drift) and **placed in a bin — no weld** | [test_gripper.py](sim/test_gripper.py) · [test_gripper_arm.py](sim/test_gripper_arm.py) |
 
 <div align="center">
   <img src="docs/img/gripper_grasp.gif" width="330" alt="M4 grasp-force control: the jaws close on a part and hold it by friction, then release">
