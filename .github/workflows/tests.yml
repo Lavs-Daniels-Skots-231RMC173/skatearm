@@ -41,7 +41,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install deps (cockpit + MuJoCo, pinned)
-        run: pip install -r tools/skate_commander/requirements.txt "mujoco==3.10.0" pytest
+        run: pip install -r tools/skate_commander/requirements.txt "mujoco==3.10.0" pytest httpx
       - name: Fetch the official skt_v3 model (pinned)
         run: |
           git clone --filter=blob:none --no-checkout https://github.com/Rbotic/skate_teleop.git
@@ -96,3 +96,33 @@ jobs:
         env:
           SKT_DIR: skate_teleop/skt_v3
         run: pytest -q tools/skate_commander/test/test_compliant.py
+
+      - name: Gravity feed-forward cancels static sag
+        env:
+          SKT_DIR: skate_teleop/skt_v3
+        run: pytest -q sim/test_gravity_ff.py
+
+      - name: Cockpit bridge — cycle, glide, contact reflex, obstacles, tuning
+        env:
+          SKT_DIR: skate_teleop/skt_v3
+        run: pytest -q tools/skate_commander/test/test_bridge.py
+
+      - name: Program runner — run, click-to-step, E-STOP, teach-in replay
+        env:
+          SKT_DIR: skate_teleop/skt_v3
+        run: pytest -q tools/skate_commander/test/test_program.py
+
+      - name: Cockpit WebSocket round-trip — jog in, telemetry out
+        env:
+          SKT_DIR: skate_teleop/skt_v3
+        run: pytest -q tools/skate_commander/test/test_ws_e2e.py
+
+      - name: ROS 2 wire end-to-end — a command reaches the sim and moves it
+        env:
+          SKT_DIR: skate_teleop/skt_v3
+        run: pytest -q tools/skate_ros2/test/test_e2e_sim.py
+
+      - name: ROS 2 multi-peer — observer follows the commander, limits snap clean
+        env:
+          SKT_DIR: skate_teleop/skt_v3
+        run: pytest -q tools/skate_ros2/test/test_multipeer.py
