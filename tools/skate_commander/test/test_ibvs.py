@@ -9,6 +9,7 @@ CameraStreamer against the skate_ros2 MuJoCo sim endpoint:
 """
 import os
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -41,6 +42,31 @@ def _free_port():
     return p
 
 
+_GL = None
+_PROBE = ("import mujoco; "
+          "mujoco.Renderer(mujoco.MjModel.from_xml_string('<mujoco/>'), 8, 8)")
+
+
+def _gl_ok():
+    """Can MuJoCo open a render context here? Both tests draw frames, so on a
+    headless box without a GL backend they must skip rather than explode.
+
+    The probe runs in a child process on purpose: a context that fails to come
+    up leaves MuJoCo's GL state poisoned, and the *second* attempt in the same
+    interpreter aborts the process outright instead of raising. One child, one
+    verdict, cached — the parent never touches a broken backend.
+    """
+    global _GL
+    if _GL is None:
+        _GL = subprocess.run([sys.executable, "-c", _PROBE],
+                             capture_output=True).returncode == 0
+    return _GL
+
+
+NO_GL = ("no MuJoCo GL backend — set MUJOCO_GL=osmesa (apt install libosmesa6) "
+         "or MUJOCO_GL=egl, or run on a machine with a display")
+
+
 def test_ibvs_robust_to_miscalibration():
     try:
         import mujoco  # noqa: F401
@@ -49,6 +75,8 @@ def test_ibvs_robust_to_miscalibration():
         _skip("mujoco / Pillow not installed"); return
     if not Path(MJCF).exists():
         _skip("no control model"); return
+    if not _gl_ok():
+        _skip(NO_GL); return
 
     from skate_commander import camera, vision
     from skate_commander.bridge import RobotBridge
@@ -69,10 +97,14 @@ def test_ibvs_robust_to_miscalibration():
     cam = camera.CameraStreamer(scene,
                                 lambda: (None if br.targ is None else list(br.targ)))
 
-    def spin(secs):
-        end = time.monotonic() + secs
+    def spin_until(pred, timeout):
+        """Tick the bridge until pred() holds. True if it did, False on timeout."""
+        end = time.monotonic() + timeout
         while time.monotonic() < end:
             br.tick(DT, ui_attached=True); time.sleep(DT)
+            if pred():
+                return True
+        return False
 
     def track(secs=0.5):
         end = time.monotonic() + secs
@@ -81,7 +113,15 @@ def test_ibvs_robust_to_miscalibration():
             if br.ik_targets.get("right") is None:
                 break
 
-    spin(0.7); br.resume()
+    # The bridge arms from telemetry and only leaves E-STOP once the link is
+    # fresh; under a software renderer the camera thread pushes that past a
+    # second. Wait for the condition, never for a fixed interval: resume() is
+    # a silent no-op while the link is stale, set_ik_target() is then ignored,
+    # and every assertion below would pass judgement on an arm that never moved.
+    assert spin_until(lambda: br.targ is not None and br.link.connected, 10.0), \
+        (f"bridge never came up (armed={br.targ is not None}, "
+         f"connected={br.link.connected})")
+    assert br.resume(), "bridge refused to leave E-STOP"
     kr = kin["right"]
 
     # detect the static target ONCE while the arm is clear of it
@@ -146,6 +186,8 @@ def test_depth_cloud_backprojection():
         _skip("mujoco not installed"); return
     if not Path(MJCF).exists():
         _skip("no control model"); return
+    if not _gl_ok():
+        _skip(NO_GL); return
     from skate_commander import camera, vision
     scene = camera.build_scene_xml(SKT)
     m = mujoco.MjModel.from_xml_path(scene)

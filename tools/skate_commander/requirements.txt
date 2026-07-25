@@ -12,5 +12,13 @@ numpy>=1.26
 #   pytest           the test suite is pytest, not plain scripts.
 #   httpx>=0.27      fastapi.testclient.TestClient (test_ws_e2e.py) — an *extra*
 #                    of fastapi, so `pip install fastapi` alone will not pull it.
+#   pillow           the camera streamer JPEG-encodes every frame (camera.py).
+#                    mujoco declares it only under its `usd` extra, so it does
+#                    not arrive with mujoco either. Without it the cockpit runs
+#                    fine and simply reports "camera disabled".
 #
-# To run the tests:  pip install -r requirements.txt "mujoco==3.10.0" pytest httpx
+# The camera also needs a GL backend. Headless (CI, a server, WSL without
+# WSLg): apt install libosmesa6 and export MUJOCO_GL=osmesa.
+#
+# To run the tests:
+#   pip install -r requirements.txt "mujoco==3.10.0" pytest httpx pillow
