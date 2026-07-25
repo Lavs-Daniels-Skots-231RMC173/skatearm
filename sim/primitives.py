@@ -209,6 +209,11 @@ def grasp(m, d, side):
     to the wrist via the pre-declared weld constraint (real gripper geometry is
     unknown until the hardware arrives — documented stand-in).
 
+    Still the stand-in everywhere except one place: on a scene built by
+    `make_cell_scene.py --gripper`, sequencer.py grips the peg with M4's
+    actuated jaws (`make_gripper_cell.py`) and never calls this for the RIGHT
+    hand. The LEFT hand welds there too, and the default cell welds both.
+
     Computes the relative pose at engage time and writes it into eq_data, so
     the weld holds the part exactly where it is (no snap)."""
     eq = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_EQUALITY, GRASP_EQ[side])

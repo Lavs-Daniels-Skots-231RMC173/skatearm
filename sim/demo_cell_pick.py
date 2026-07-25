@@ -12,6 +12,11 @@ Sequence (all under physics):
 The grasp is a weld constraint engaged at the part's current pose (no snap) —
 a documented stand-in until the real Skate gripper geometry is known.
 
+M4's actuated jaws are the sim replacement, and `sequencer.py` drives the RIGHT
+hand of the full S0-S7 cycle with them on a scene built by
+`make_cell_scene.py --gripper`. This Phase 1 demo deliberately stays on the weld
+(both hands): it runs on the default cell model, which is unchanged.
+
 Usage:
     python make_control_model.py /path/to/skate_teleop/skt_v3
     python make_collision_model.py /path/to/skate_teleop/skt_v3

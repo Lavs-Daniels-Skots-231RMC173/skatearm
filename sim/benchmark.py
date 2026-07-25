@@ -139,9 +139,11 @@ def task_carry(m, trials, rng):
     right the peg (the proven dual-grasp), then both carry their objects
     together (6-DoF, orientation-locked) to shifted targets. Metric = each
     object retained (not dropped), how far it was carried, and its tilt.
-    (A true weld-transfer hand-off waits for the real gripper — the sim grasp
-    is a magnetic weld stand-in, and passing one object between two welds is a
-    hardware-era task.)"""
+    (A true hand-off waits for the real gripper — every benchmark task runs the
+    DEFAULT cell, where both grasps are magnetic weld stand-ins, and passing one
+    object between two welds is a hardware-era task. M4's actuated jaws exist,
+    but they are wired into sequencer.py's cycle on the right hand and the
+    opt-in `--gripper` scene, not into these tasks.)"""
     bp, pg = body_id(m, "base_part"), body_id(m, "peg")
     rows = []
     for _ in range(trials):

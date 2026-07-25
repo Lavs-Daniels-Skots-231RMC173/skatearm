@@ -55,12 +55,12 @@ Known limitation: the AABB fit still slightly overestimates the L-shaped wrist l
 - `demo_wave.py` — physics demo: arm trajectories under position control → GIF or MP4 (format follows the `--out` extension; MP4 needs `pip install imageio-ffmpeg`).
 - `demo_selfcollision.py` — hands-meet demo with the collision layer revealed mid-clip → GIF or MP4.
 - `telemetry_demo.py` — log sensors during the wave trajectory → tracking/torque/EE plot (+ optional CSV).
-- `make_cell_scene.py` — generate `skt_v3_cell.xml`: work table, base part (60×40×25 mm, 45 g, square 22 mm pocket as v1 bore stand-in), peg (Ø20×40, 12 g), accept/reject bins.
+- `make_cell_scene.py` — generate `skt_v3_cell.xml`: work table, base part (60×40×25 mm, 45 g, square 22 mm pocket as v1 bore stand-in), peg (Ø20×40, 12 g), accept/reject bins. Two opt-in variants write *separate* files and leave the default byte-identical: `--round-bore` swaps in the spec's round chamfered H9 bore, and `--gripper` writes `skt_v3_cell_gripper.xml` — the same cell with M4's actuated V-groove jaws on the **right** wrist, plus the `impratio="10" cone="elliptic"` contact options the pads need to hold a clamped peg without creeping (a model-wide `<option>`, so inside that file it also governs the left hand's weld contacts).
 - `primitives.py` — task-space primitives: `reach()` = closed-loop damped-least-squares IK on the 8-DoF arm chains, servoed through position actuators (physics stays honest, no qpos writes); optional gravity feed-forward (`reach(grav_ff=True)`, `mj_rne` at qvel=0) cancels the standing servo sag (30 → 1 mm, `test_gravity_ff.py`).
 - `demo_cell_reach.py` — Phase 1 demo: bimanual hover → descend → lift over the parts → GIF/MP4.
-- `demo_cell_pick.py` — Phase 1 demo: full bimanual pick & place (grasp → carry → place → release). The grasp is a **weld-constraint stand-in** (`primitives.grasp/release`): engaged at the part's current relative pose so nothing snaps; replaced by real gripper geometry once the hardware arrives.
+- `demo_cell_pick.py` — Phase 1 demo: full bimanual pick & place (grasp → carry → place → release). The grasp is a **weld-constraint stand-in** (`primitives.grasp/release`): engaged at the part's current relative pose so nothing snaps. The sim replacement now exists — M4's actuated jaws, which `sequencer.py` drives on the right hand of the full cycle — but this Phase 1 demo deliberately stays on the weld so it keeps running on the default scene.
 - `demo_cell_assemble.py` — Phase 1 capstone: full bimanual assembly (fixture + align + force-guarded insert + place). Insertion know-how documented in the script docstring: lateral-offset grasps, orientation-locked carries (`Arm.lock_orientation` + `ik_step6`), relative servoing, τ watchdog.
-- `sequencer.py` — GRAFCET-style soft-PLC engine + the demonstrator cycle S0–S7. Receptivities are sensor predicates (poses, grasp state, insertion depth, τ), never timers. QC verify is a v1 pose oracle — the camera pipeline replaces it. Cycle log → JSON (see `../logs/cycle_001.json`).
+- `sequencer.py` — GRAFCET-style soft-PLC engine + the demonstrator cycle S0–S7. Receptivities are sensor predicates (poses, grasp state, insertion depth, τ), never timers. QC verify is a v1 pose oracle — the camera pipeline replaces it. Cycle log → JSON (see `../logs/cycle_001.json`). **Gripper path:** on a scene built with `--gripper` the same code *detects* the jaws (`Cell.jaws`, a `grip`-actuator lookup — never configured) and runs the right hand for real: S1 closes to a 12 N grasp force instead of toggling `grasp_right`, S2/S3 carry on friction (0.3 mm slip), S4 inserts to 22.1 mm and then **opens** to release, camera ACCEPT, 38.96 s. The left hand still welds the base. Every weld-path line is untouched, and `test_cell_gripper.py` runs the jaw path in CI.
 - `demo_cell_cycle.py` — run the full automatic cycle and render it with an HMI overlay (live GRAFCET step + sensor metrics). Reference cycle: 42.6 s (`../logs/cycle_001.json`).
 - `qc.py` — camera QC pipeline: `measure()` renders qc_top/qc_side and returns peg presence, alignment (mm) and insertion-depth estimate; `verdict()` applies the spec thresholds; `annotate()` saves inspection images.
 - `benchmark.py` — **bimanual benchmark suite**: headless, seeded, quantitative metrics over N trials for four tasks — reach · carry · peg-insert · force-regulated peg-insert (`insert_m2`) — reusing the same primitives; `--json` writes a full report (sample: `benchmark_results.json`). `test_benchmark.py` is the smoke test.
@@ -121,10 +121,12 @@ python benchmark.py --model skate_teleop/skt_v3 --trials 5 --json results.json
 Committed report: [`benchmark_results.json`](benchmark_results.json) — regenerate
 with the command above (defaults to all four tasks, seed 0).
 
-A true weld-transfer **hand-off** is deferred: the sim grasp is a magnetic weld
-stand-in, so passing one object between two welds is a hardware-era task (the
-robust co-carry above stands in for the two-arm-coordination metric).
-`test_benchmark.py` is the smoke test (one trial of each task).
+A true **hand-off** is deferred: all four benchmark tasks run the default cell,
+where both grasps are magnetic weld stand-ins, so passing one object between two
+welds is a hardware-era task (the robust co-carry above stands in for the
+two-arm-coordination metric). M4's jaws are wired into `sequencer.py`'s cycle,
+on the **right** hand and on the opt-in `--gripper` scene only — not into these
+tasks. `test_benchmark.py` is the smoke test (one trial of each task).
 
 ## Workspace notes (measured)
 
