@@ -94,6 +94,11 @@ jobs:
           SKT_DIR: skate_teleop/skt_v3
         run: pytest -q sim/test_gripper_arm.py
 
+      - name: Live cell cycle on real jaws — grip, carry, insert, release (M4 in S0..S7)
+        env:
+          SKT_DIR: skate_teleop/skt_v3
+        run: pytest -q sim/test_cell_gripper.py
+
       - name: Cockpit contact modes — stop vs compliant (M3+)
         env:
           SKT_DIR: skate_teleop/skt_v3
