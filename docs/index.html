@@ -94,6 +94,7 @@
     box-shadow:0 6px 18px -10px rgba(59,130,246,.7),inset 0 1px 0 rgba(255,255,255,.2);}
   .nav-cta.solid:hover{background:linear-gradient(180deg,#5C99FB,var(--accent));color:#fff;}
   .nav-cta svg{width:15px;height:15px;}
+  @media(max-width:1060px){.nav-links a.hidew{display:none;}}
   @media(max-width:860px){.nav-links a.hidem{display:none;}}
 
   /* hero */
@@ -245,6 +246,7 @@
       <a class="hidem" href="#cockpit">Cockpit</a>
       <a class="hidem" href="#capabilities">Capabilities</a>
       <a class="hidem" href="#examples">Examples</a>
+      <a class="hidem hidew" href="#manipulation">Force control</a>
       <a class="hidem" href="#policy">Policy</a>
       <a class="hidem" href="#how">How it works</a>
       <a href="commander.html">Docs</a>
@@ -445,8 +447,8 @@
         <h3 style="font:700 24px var(--sans);letter-spacing:-.01em;">Phase 1 &mdash; the autonomous cell, end to end.</h3>
         <p style="color:var(--fg2);margin-top:12px;max-width:520px;">One arm fixtures a base part in the air; the other aligns a peg by relative servoing and inserts it with a force-guarded descent. A GRAFCET sequencer runs the cycle on sensor transitions; two fixed cameras deliver the accept / reject verdict, logged to a Flask + SQLite dashboard. <span style="color:var(--faint)">Numbers below are from logged sim cycles.</span></p>
         <div class="nums">
-          <div><b>42.4 s</b><span>cycle (takt &le; 60 s)</span></div>
-          <div><b>&plusmn;1.3 mm</b><span>QC alignment</span></div>
+          <div><b>42.6 s</b><span>cycle (takt &le; 60 s)</span></div>
+          <div><b>&plusmn;1.6 mm</b><span>QC alignment</span></div>
           <div><b>&plusmn;3.4 mm</b><span>insert depth</span></div>
         </div>
       </div>
@@ -455,7 +457,60 @@
   </div>
 </section>
 
-<section class="sec" id="policy" style="border-top:1px solid var(--line);">
+<section class="sec" id="manipulation" style="border-top:1px solid var(--line);">
+  <div class="wrap">
+    <div class="shead reveal">
+      <span class="wm" aria-hidden="true">FORCE</span>
+      <span class="eyebrow">Manipulation core &middot; contact-force control</span>
+      <h2>It measures what it touches.</h2>
+      <p class="lead">Phase 1 guarded contact with an actuator-torque watchdog &mdash; push until a number trips. The manipulation core replaces that with a real wrist wrench and closed-loop force control: an insertion that searches for the bore, an arm that yields at a commanded stiffness, and a gripper that holds by friction instead of a weld. All four milestones are shipped, and each one is exercised by CI.</p>
+    </div>
+    <div class="cock reveal">
+      <div>
+        <ul class="pts">
+          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4"/></svg><span><b>M1 &mdash; wrist force/torque sensing.</b> A 6-axis contact wrench at each wrist flange, checked against a known static load to <b>&lt;&nbsp;0.05&nbsp;N</b>. It replaces the sum-of-<code style="font-family:var(--mono);font-size:12px;color:var(--accent-lt)">actuatorfrc</code> proxy &mdash; you cannot regulate a force you cannot read.</span></li>
+          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4"/></svg><span><b>M2 &mdash; force-regulated insertion.</b> Axial admittance on the descent setpoint, plus a spiral bore search. Misalignment tolerance <b>6/6 at 2 and 4&nbsp;mm</b>, 5/6 at 6&nbsp;mm, 3/6 at 8&nbsp;mm &mdash; where the open-loop descent manages <b>&le;&nbsp;1/6</b>. Peak axial force stays 3.3&ndash;4.6&nbsp;N against a 9&nbsp;N abort, and a 9.3&deg; peg tilt is levelled to under 2&deg;.</span></li>
+          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4"/></svg><span><b>M3 &mdash; Cartesian admittance.</b> A virtual mass&ndash;spring&ndash;damper at the TCP: the arm yields to a contact wrench at a tunable per-axis stiffness. Over a <b>16&times;</b> stiffness sweep the yield lands on <b>e&nbsp;=&nbsp;F/K</b> exactly &mdash; 40/20/10/5/2.5&nbsp;mm under 8&nbsp;N &mdash; and springs back to the nominal pose on release.</span></li>
+          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4"/></svg><span><b>M4 &mdash; a real gripper.</b> Parallel jaws under closed-loop grasp-force control: 2&ndash;5&nbsp;N tracked to within <b>0.05&nbsp;N</b>, the part held by <b>friction, not a weld</b>, and a slip curve that scales the way friction should &mdash; a 5&nbsp;N grasp carries 5.25&nbsp;N before it lets go.</span></li>
+        </ul>
+        <div class="nums" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:22px;max-width:420px;">
+          <div style="border:1px solid var(--line);border-radius:10px;padding:11px 15px;background:rgba(30,34,42,.4);"><b style="display:block;font:700 19px var(--mono);font-variant-numeric:tabular-nums;color:#fff;">&lt;0.05 N</b><span style="font:500 12px var(--mono);color:var(--faint);">wrist wrench error</span></div>
+          <div style="border:1px solid var(--line);border-radius:10px;padding:11px 15px;background:rgba(30,34,42,.4);"><b style="display:block;font:700 19px var(--mono);font-variant-numeric:tabular-nums;color:#fff;">6/6</b><span style="font:500 12px var(--mono);color:var(--faint);">seated at 2&ndash;4 mm off</span></div>
+          <div style="border:1px solid var(--line);border-radius:10px;padding:11px 15px;background:rgba(30,34,42,.4);"><b style="display:block;font:700 19px var(--mono);font-variant-numeric:tabular-nums;color:#fff;">16&times;</b><span style="font:500 12px var(--mono);color:var(--faint);">stiffness, e = F/K</span></div>
+          <div style="border:1px solid var(--line);border-radius:10px;padding:11px 15px;background:rgba(30,34,42,.4);"><b style="display:block;font:700 19px var(--mono);font-variant-numeric:tabular-nums;color:#fff;">5.25 N</b><span style="font:500 12px var(--mono);color:var(--faint);">held before slip</span></div>
+        </div>
+        <div class="ctas" style="margin-top:24px;">
+          <a class="btn ghost" href="https://github.com/dsl-robotics/skatearm/blob/main/docs/MANIPULATION.md" target="_blank" rel="noopener">Read the manipulation plan</a>
+          <a class="btn ghost" href="https://github.com/dsl-robotics/skatearm/tree/main/sim/eval_data" target="_blank" rel="noopener">Raw eval data (JSON)</a>
+        </div>
+      </div>
+      <div class="frame">
+        <div class="bar"><i></i><i></i><i></i><span class="tag">M3 admittance &middot; push and yield</span></div>
+        <img src="img/push_and_yield.gif" loading="lazy" alt="An external push on the wrist makes the arm yield along the pushed axis and spring back to its nominal pose when the force is removed">
+      </div>
+    </div>
+    <div class="cell reveal">
+      <div class="frame">
+        <div class="bar"><i></i><i></i><i></i><span class="tag">M4 gripper &middot; grasp, carry, place &mdash; no weld</span></div>
+        <img src="img/gripper_arm_place.gif" loading="lazy" alt="Parallel jaws on the wrist close on a part, carry it over a bin and open to release it, the part held by friction throughout">
+      </div>
+      <div>
+        <h3 style="font:700 24px var(--sans);letter-spacing:-.01em;">Every number above is recomputed from raw data, on every push.</h3>
+        <p style="color:var(--fg2);margin-top:12px;max-width:520px;">Each sweep writes its trials to a committed JSON file, and a test re-derives every published figure from those files &mdash; the misalignment curve, the stiffness sweep, the slip curve, the cycle time. It runs in the hardware-free CI job with no MuJoCo and no GPU, so prose and data cannot drift apart silently: change a number in the text without changing the measurement and the build goes red.</p>
+        <div class="nums" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:18px;max-width:520px;">
+          <div><b>13</b><span>checks in CI</span></div>
+          <div><b>7</b><span>raw data files</span></div>
+          <div><b>0</b><span>hand-typed stats</span></div>
+        </div>
+        <div class="ctas" style="margin-top:22px;">
+          <a class="btn ghost" href="https://github.com/dsl-robotics/skatearm/blob/main/sim/test_manipulation_numbers.py" target="_blank" rel="noopener">See the guard test</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="policy" style="border-top:1px solid var(--line);background:rgba(8,9,11,.45);">
   <div class="wrap">
     <div class="shead reveal">
       <span class="wm" aria-hidden="true">POLICY</span>
@@ -532,6 +587,7 @@
         <a href="#cockpit">The cockpit</a>
         <a href="#capabilities">Capabilities</a>
         <a href="#examples">Examples</a>
+        <a href="#manipulation">Force control</a>
         <a href="https://raw.githack.com/dsl-robotics/skatearm/main/tools/skate_commander/preview.html" target="_blank" rel="noopener">Live demo</a>
       </div>
       <div>
