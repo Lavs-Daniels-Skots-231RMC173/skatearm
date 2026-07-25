@@ -1,0 +1,43 @@
+{
+  "eval": "insertion-theta",
+  "milestone": "M2",
+  "source": "sim/eval_insertion.py --theta",
+  "tilt_axes_per_theta": 2,
+  "theta_sweep": [
+    {
+      "theta_cmd_deg": 0,
+      "tilt_injected_deg": 1.9,
+      "seated": 1,
+      "trials": 1,
+      "tilt_final_max_deg": 1.4
+    },
+    {
+      "theta_cmd_deg": 3,
+      "tilt_injected_deg": 2.0,
+      "seated": 2,
+      "trials": 2,
+      "tilt_final_max_deg": 1.5
+    },
+    {
+      "theta_cmd_deg": 6,
+      "tilt_injected_deg": 3.5,
+      "seated": 2,
+      "trials": 2,
+      "tilt_final_max_deg": 1.5
+    },
+    {
+      "theta_cmd_deg": 9,
+      "tilt_injected_deg": 6.0,
+      "seated": 2,
+      "trials": 2,
+      "tilt_final_max_deg": 1.8
+    },
+    {
+      "theta_cmd_deg": 12,
+      "tilt_injected_deg": 9.3,
+      "seated": 2,
+      "trials": 2,
+      "tilt_final_max_deg": 1.8
+    }
+  ]
+}

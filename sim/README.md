@@ -61,9 +61,10 @@ Known limitation: the AABB fit still slightly overestimates the L-shaped wrist l
 - `demo_cell_pick.py` — Phase 1 demo: full bimanual pick & place (grasp → carry → place → release). The grasp is a **weld-constraint stand-in** (`primitives.grasp/release`): engaged at the part's current relative pose so nothing snaps; replaced by real gripper geometry once the hardware arrives.
 - `demo_cell_assemble.py` — Phase 1 capstone: full bimanual assembly (fixture + align + force-guarded insert + place). Insertion know-how documented in the script docstring: lateral-offset grasps, orientation-locked carries (`Arm.lock_orientation` + `ik_step6`), relative servoing, τ watchdog.
 - `sequencer.py` — GRAFCET-style soft-PLC engine + the demonstrator cycle S0–S7. Receptivities are sensor predicates (poses, grasp state, insertion depth, τ), never timers. QC verify is a v1 pose oracle — the camera pipeline replaces it. Cycle log → JSON (see `../logs/cycle_001.json`).
-- `demo_cell_cycle.py` — run the full automatic cycle and render it with an HMI overlay (live GRAFCET step + sensor metrics). Reference cycle: 42.4 s.
+- `demo_cell_cycle.py` — run the full automatic cycle and render it with an HMI overlay (live GRAFCET step + sensor metrics). Reference cycle: 42.6 s (`../logs/cycle_001.json`).
 - `qc.py` — camera QC pipeline: `measure()` renders qc_top/qc_side and returns peg presence, alignment (mm) and insertion-depth estimate; `verdict()` applies the spec thresholds; `annotate()` saves inspection images.
-- `benchmark.py` — **bimanual benchmark suite**: headless, seeded, quantitative metrics over N trials for three tasks — reach · carry · peg-insert — reusing the same primitives; `--json` writes a full report (sample: `benchmark_results.json`). `test_benchmark.py` is the smoke test.
+- `benchmark.py` — **bimanual benchmark suite**: headless, seeded, quantitative metrics over N trials for four tasks — reach · carry · peg-insert · force-regulated peg-insert (`insert_m2`) — reusing the same primitives; `--json` writes a full report (sample: `benchmark_results.json`). `test_benchmark.py` is the smoke test.
+- `eval_data/` — the raw JSON written by `eval_insertion.py` / `eval_admittance.py` / `eval_gripper.py` (`--json PATH`). Every manipulation figure quoted in `../README.md` and `../docs/MANIPULATION.md` is re-derived from these files — plus `benchmark_results.json` and `../logs/*.json` — by `test_manipulation_numbers.py`, which runs in the **hardware-free** CI job (stdlib + pytest, no MuJoCo). Re-run an eval without updating the prose and CI goes red.
 
 ## QC vision lessons (all measured, not guessed)
 
@@ -84,7 +85,7 @@ Known limitation: the AABB fit still slightly overestimates the L-shaped wrist l
    the left arm grasps the block with a FRONT (−y) offset so the overhead
    camera sees the pocket unoccluded at the verify station; grasp offsets on
    both arms widened to 8 cm so the wrists clear each other at the meet point.
-6. Residuals vs sim ground truth: alignment ±1.3 mm, depth ±3.4 mm (480p,
+6. Residuals vs sim ground truth: alignment ±1.6 mm, depth ±3.4 mm (480p,
    1 px ≈ 0.66 mm overhead). Tilt needs higher resolution — explicitly v2.
 
 ## 6-DOF carry notes
@@ -115,6 +116,10 @@ python benchmark.py --model skate_teleop/skt_v3 --trials 5 --json results.json
 | `reach` | both arms servo to random reachable target pairs | **5/5**, max EE error 0.2–0.4 mm |
 | `carry` | both arms grasp an object each and carry them together (6-DoF, orientation-locked) | **5/5**, objects lifted &amp; carried ~11 cm, peg tilt 1.8° |
 | `insert` | full bimanual peg-in-hole (offset grasps, carry, align, force-guarded descent) | **5/5**, depth 18.7 mm (target 18), peg tilt 1.2–1.4°, no τ-abort |
+| `insert_m2` | the same staging, but the M2 **force-regulated** controller with spiral search absorbs an injected residual xy misalignment (≤2.5 mm) | **5/5**, peg-in-base 23.7 mm, peg tilt 0.7–0.9°, peak wrench 4.7–4.9 N (abort 9), no abort |
+
+Committed report: [`benchmark_results.json`](benchmark_results.json) — regenerate
+with the command above (defaults to all four tasks, seed 0).
 
 A true weld-transfer **hand-off** is deferred: the sim grasp is a magnetic weld
 stand-in, so passing one object between two welds is a hardware-era task (the

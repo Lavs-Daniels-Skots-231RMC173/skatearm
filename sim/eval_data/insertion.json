@@ -1,0 +1,87 @@
+{
+  "eval": "insertion",
+  "milestone": "M2",
+  "source": "sim/eval_insertion.py",
+  "dirs_per_offset": 6,
+  "offsets_mm": [
+    0,
+    2,
+    4,
+    6,
+    8
+  ],
+  "w0_xy_m": [
+    0.0634,
+    0.3883
+  ],
+  "oracle": {
+    "seat_min_mm": 10.0,
+    "xy_max_mm": 6.0
+  },
+  "modes": {
+    "search": [
+      {
+        "offset_mm": 0,
+        "seated": 1,
+        "trials": 1,
+        "peak_wrench_max_n": 3.3
+      },
+      {
+        "offset_mm": 2,
+        "seated": 6,
+        "trials": 6,
+        "peak_wrench_max_n": 3.5
+      },
+      {
+        "offset_mm": 4,
+        "seated": 6,
+        "trials": 6,
+        "peak_wrench_max_n": 3.6
+      },
+      {
+        "offset_mm": 6,
+        "seated": 5,
+        "trials": 6,
+        "peak_wrench_max_n": 4.5
+      },
+      {
+        "offset_mm": 8,
+        "seated": 3,
+        "trials": 6,
+        "peak_wrench_max_n": 4.6
+      }
+    ],
+    "no-search": [
+      {
+        "offset_mm": 0,
+        "seated": 0,
+        "trials": 1,
+        "peak_wrench_max_n": 3.1
+      },
+      {
+        "offset_mm": 2,
+        "seated": 0,
+        "trials": 6,
+        "peak_wrench_max_n": 3.3
+      },
+      {
+        "offset_mm": 4,
+        "seated": 1,
+        "trials": 6,
+        "peak_wrench_max_n": 3.3
+      },
+      {
+        "offset_mm": 6,
+        "seated": 1,
+        "trials": 6,
+        "peak_wrench_max_n": 3.2
+      },
+      {
+        "offset_mm": 8,
+        "seated": 1,
+        "trials": 6,
+        "peak_wrench_max_n": 3.2
+      }
+    ]
+  }
+}

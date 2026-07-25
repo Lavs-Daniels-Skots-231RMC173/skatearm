@@ -14,9 +14,14 @@ shows the open-loop descent just jams. This is the result that turns "assembles 
 perfectly aligned" into "assembles under realistic misalignment via contact force".
 
     python eval_insertion.py --model /path/to/skt_v3 --offsets 0,2,4,6,8 --dirs 6 \
-        --no-search-baseline
+        --no-search-baseline --json sim/eval_data/insertion.json
+
+``--json`` writes the same numbers as a committed artefact, so the figures quoted
+in ``docs/MANIPULATION.md`` have raw data behind them (``sim/test_manipulation_numbers.py``
+pins the prose to that file in CI).
 """
 import argparse
+import json
 import os
 import sys
 
@@ -162,6 +167,7 @@ def theta_sweep(model_dir, thetas_deg, dirs=2):
     axes = [[np.cos(a), np.sin(a), 0.0]
             for a in [2 * np.pi * k / dirs for k in range(dirs)]]
     print(f"staged. peg-tilt (theta) tolerance sweep, {dirs} tilt-axes/theta:\n")
+    rows = []
     for th in thetas_deg:
         ok, t0s, tfs = 0, [], []
         for ax in axes:
@@ -170,8 +176,14 @@ def theta_sweep(model_dir, thetas_deg, dirs=2):
             if th == 0:
                 break
         n = 1 if th == 0 else dirs
+        rows.append({"theta_cmd_deg": th, "tilt_injected_deg": round(max(t0s), 1),
+                     "seated": ok, "trials": n,
+                     "tilt_final_max_deg": round(max(tfs), 1)})
         print(f"  cmd {th:>2} deg -> injected tilt {max(t0s):4.1f} deg: {ok}/{n} seated, "
               f"levelled to <= {max(tfs):.1f} deg")
+    return {"eval": "insertion-theta", "milestone": "M2",
+            "source": "sim/eval_insertion.py --theta",
+            "tilt_axes_per_theta": dirs, "theta_sweep": rows}
 
 
 def sweep(model_dir, offsets_mm, dirs, no_search_baseline=False):
@@ -181,10 +193,14 @@ def sweep(model_dir, offsets_mm, dirs, no_search_baseline=False):
     angles = [2 * np.pi * k / dirs for k in range(dirs)]
     print(f"staged (W0={W0.round(4)}). misalignment-tolerance sweep, {dirs} dirs/offset:\n")
     modes = [("search", True)] + ([("no-search", False)] if no_search_baseline else [])
-    report = {}
+    report = {"eval": "insertion", "milestone": "M2",
+              "source": "sim/eval_insertion.py", "dirs_per_offset": dirs,
+              "offsets_mm": list(offsets_mm), "w0_xy_m": [round(v, 4) for v in W0.tolist()],
+              "oracle": {"seat_min_mm": SEAT_MIN * 1000, "xy_max_mm": XY_MAX * 1000},
+              "modes": {}}
     for mode, search in modes:
         print(f"--- {mode} ---")
-        report[mode] = {}
+        rows = []
         for off_mm in offsets_mm:
             r = off_mm / 1000.0
             ok = 0
@@ -197,9 +213,11 @@ def sweep(model_dir, offsets_mm, dirs, no_search_baseline=False):
                 if off_mm == 0:
                     break                                # a single trial at zero offset
             n = 1 if off_mm == 0 else dirs
-            report[mode][off_mm] = (ok, n)
+            rows.append({"offset_mm": off_mm, "seated": ok, "trials": n,
+                         "peak_wrench_max_n": round(float(max(peaks)), 1)})
             print(f"  offset {off_mm:>2} mm: {ok}/{n} seated   "
                   f"(peak wrench max {max(peaks):.1f} N)")
+        report["modes"][mode] = rows
         print()
     return report
 
@@ -213,13 +231,21 @@ def main():
                     help="also run with the spiral search OFF")
     ap.add_argument("--theta", default=None,
                     help="run the peg-tilt tolerance sweep instead (degrees, e.g. 0,3,6,9,12)")
+    ap.add_argument("--json", default=None, metavar="PATH",
+                    help="also write the results as a JSON artefact")
     args = ap.parse_args()
     if args.theta is not None:
         thetas = [int(x) for x in args.theta.split(",") if x.strip() != ""]
-        theta_sweep(args.model, thetas, dirs=max(2, args.dirs // 3))
-        return
-    offsets = [int(x) for x in args.offsets.split(",") if x.strip() != ""]
-    sweep(args.model, offsets, args.dirs, args.no_search_baseline)
+        out = theta_sweep(args.model, thetas, dirs=max(2, args.dirs // 3))
+    else:
+        offsets = [int(x) for x in args.offsets.split(",") if x.strip() != ""]
+        out = sweep(args.model, offsets, args.dirs, args.no_search_baseline)
+    if args.json:
+        os.makedirs(os.path.dirname(os.path.abspath(args.json)), exist_ok=True)
+        with open(args.json, "w", encoding="utf-8") as f:
+            json.dump(out, f, indent=2)
+            f.write("\n")
+        print(f"\nwrote {args.json}")
 
 
 if __name__ == "__main__":

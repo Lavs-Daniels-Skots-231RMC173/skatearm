@@ -1,0 +1,87 @@
+{
+  "eval": "admittance",
+  "milestone": "M3",
+  "source": "sim/eval_admittance.py",
+  "stiffness_curve": {
+    "wrench_n": 8.0,
+    "k_sweep": [
+      {
+        "k_n_per_m": 200,
+        "yield_mm": 40.0,
+        "f_over_k_mm": 40.0,
+        "e_times_k_n": 8.0,
+        "after_release_mm": 0.2
+      },
+      {
+        "k_n_per_m": 400,
+        "yield_mm": 20.0,
+        "f_over_k_mm": 20.0,
+        "e_times_k_n": 8.0,
+        "after_release_mm": 0.0
+      },
+      {
+        "k_n_per_m": 800,
+        "yield_mm": 10.0,
+        "f_over_k_mm": 10.0,
+        "e_times_k_n": 8.0,
+        "after_release_mm": 0.0
+      },
+      {
+        "k_n_per_m": 1600,
+        "yield_mm": 5.0,
+        "f_over_k_mm": 5.0,
+        "e_times_k_n": 8.0,
+        "after_release_mm": 0.0
+      },
+      {
+        "k_n_per_m": 3200,
+        "yield_mm": 2.5,
+        "f_over_k_mm": 2.5,
+        "e_times_k_n": 8.0,
+        "after_release_mm": 0.0
+      }
+    ],
+    "k_ratio": 16,
+    "per_axis": {
+      "k_n_per_m": [
+        400,
+        1600,
+        400
+      ],
+      "f_n": [
+        8.0,
+        8.0,
+        0.0
+      ],
+      "e_mm": [
+        20.0,
+        5.0,
+        0.0
+      ],
+      "f_over_k_mm": [
+        20.0,
+        5.0,
+        0.0
+      ]
+    }
+  },
+  "push_and_yield": {
+    "applied_n": 8.0,
+    "axis": "y",
+    "measured_wrench_n": [
+      0.0,
+      8.0,
+      0.01
+    ],
+    "yielded_mm": [
+      2.0,
+      21.1,
+      6.6
+    ],
+    "after_release_mm": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  }
+}

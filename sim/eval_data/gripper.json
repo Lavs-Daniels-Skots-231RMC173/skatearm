@@ -1,0 +1,63 @@
+{
+  "eval": "gripper",
+  "milestone": "M4",
+  "source": "sim/eval_gripper.py",
+  "targets_n": [
+    2.0,
+    3.0,
+    4.0,
+    5.0
+  ],
+  "hold": [
+    {
+      "target_n": 2.0,
+      "measured_n": 2.0,
+      "held": true,
+      "part_dz_mm": -3.0,
+      "hold_force_n": 2.0
+    },
+    {
+      "target_n": 3.0,
+      "measured_n": 3.0,
+      "held": true,
+      "part_dz_mm": -2.9,
+      "hold_force_n": 3.0
+    },
+    {
+      "target_n": 4.0,
+      "measured_n": 4.0,
+      "held": true,
+      "part_dz_mm": -2.9,
+      "hold_force_n": 4.01
+    },
+    {
+      "target_n": 5.0,
+      "measured_n": 5.0,
+      "held": true,
+      "part_dz_mm": -3.0,
+      "hold_force_n": 5.01
+    }
+  ],
+  "slip": [
+    {
+      "target_n": 2.0,
+      "grasp_n": 2.0,
+      "slip_payload_n": 3.75
+    },
+    {
+      "target_n": 3.0,
+      "grasp_n": 3.0,
+      "slip_payload_n": 4.25
+    },
+    {
+      "target_n": 4.0,
+      "grasp_n": 4.0,
+      "slip_payload_n": 5.0
+    },
+    {
+      "target_n": 5.0,
+      "grasp_n": 5.0,
+      "slip_payload_n": 5.25
+    }
+  ]
+}

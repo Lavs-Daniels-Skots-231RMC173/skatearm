@@ -1,11 +1,11 @@
 [
  {
-  "t": 1.0,
+  "t": 0.0,
   "step": "S0",
   "msg": "cycle start"
  },
  {
-  "t": 4.6,
+  "t": 3.6,
   "step": "S0",
   "msg": "parts detected on table -> S1",
   "base": [
@@ -14,87 +14,93 @@
    0.029892244579783813
   ],
   "peg": [
-   0.12000077860295454,
-   0.4400004764498537,
+   0.12000077860295456,
+   0.4400004764498541,
    0.04993460754454997
   ]
  },
  {
-  "t": 4.6,
+  "t": 3.6,
   "step": "S1",
   "msg": "approach"
  },
  {
-  "t": 15.4,
+  "t": 14.4,
   "step": "S1",
   "msg": "grasps confirmed -> S2"
  },
  {
-  "t": 15.4,
+  "t": 14.4,
   "step": "S2",
   "msg": "carry to fixture/staging"
  },
  {
-  "t": 23.096,
+  "t": 22.096,
   "step": "S2",
   "msg": "at meet point -> S3",
-  "block_tilt": 1.5835,
-  "peg_tilt": 1.6148
+  "block_tilt": 1.4602,
+  "peg_tilt": 1.6302
  },
  {
-  "t": 23.096,
+  "t": 22.096,
   "step": "S3",
   "msg": "align",
-  "err_xy": 0.0187
+  "err_xy": 0.0128
  },
  {
-  "t": 26.296,
+  "t": 25.296,
   "step": "S3",
   "msg": "aligned -> S4",
-  "err_xy": 0.0064
+  "err_xy": 0.0037
  },
  {
-  "t": 26.296,
+  "t": 25.296,
   "step": "S4",
-  "msg": "insert (guarded)",
-  "tau_baseline": 5.6469
+  "msg": "insert (force-regulated)",
+  "assumed_center": [
+   0.0725,
+   0.3989
+  ]
  },
  {
-  "t": 26.872,
+  "t": 26.472,
   "step": "S4",
   "msg": "insert done -> S5",
-  "depth_mm": 22.1169,
-  "aborted": false
+  "depth_mm": 22.09,
+  "aborted": false,
+  "seated": true,
+  "peak_wrench_n": 2.64,
+  "cycles": 97
  },
  {
-  "t": 29.08,
+  "t": 31.672,
   "step": "S5",
-  "msg": "QC verify",
-  "depth_mm": 22.1244,
-  "tilt_deg": 1.3854,
-  "err_xy_mm": 1.3331,
+  "msg": "QC verify (oracle only \u2014 no renderer attached)",
+  "depth_mm": 22.1209,
+  "tilt_deg": 1.8856,
+  "err_xy_mm": 0.7799,
   "result": "ACCEPT"
  },
  {
-  "t": 29.08,
+  "t": 31.672,
   "step": "S6",
   "msg": "place to ACCEPT bin"
  },
  {
-  "t": 39.376,
+  "t": 39.576,
   "step": "S6",
   "msg": "released on bin",
   "unit_at": [
-   -0.2311813401341423,
-   0.41368127993497156,
-   0.03986495270679367
+   -0.24192545188221434,
+   0.41294953150516217,
+   0.03986495199927591
   ],
   "peg_rel_z": 0.0249
  },
  {
-  "t": 42.384,
+  "t": 42.584,
   "step": "S7",
   "msg": "cycle complete",
-  "cycle_time_s": 42.384
+  "cycle_time_s": 42.584
  }
 ]

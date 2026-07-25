@@ -330,15 +330,22 @@ MuJoCo sim endpoint (SIM)  /  real Skate (REAL)
 
 ## Tests
 
-`test/` runs headless — every file is a plain script, **no pytest needed**:
+`test/` runs headless under **pytest**. One env var — `SKT_DIR`, pointing at the
+official `skt_v3` model directory — flips the model-gated files from skipped to
+executed. A file that cannot find its model reports `s`, never a green dot:
 
 ```bash
-# from tools/skate_commander; Windows: py instead of python3
-SKT_DIR=/path/to/skt_v3 SKATE_MJCF=/path/to/skt_v3/skt_v3_control.xml \
-    python3 test/test_kinematics.py     # FK vs MuJoCo + tool offsets
-# likewise: test_urdf.py · test_bridge.py (cart-step & mirror e2e) ·
-#           test_ws_e2e.py · test_guard.py · test_program.py
+# from the repo root; Windows: py instead of python3
+pip install pytest
+SKT_DIR=/path/to/skt_v3 python3 -m pytest -q tools/skate_commander/test/
+
+# one file, with the skip reasons spelled out
+SKT_DIR=/path/to/skt_v3 python3 -m pytest -q -rs \
+    tools/skate_commander/test/test_kinematics.py
 ```
+
+Running a file directly still works — it hands off to pytest itself, so
+`python3 test/test_bridge.py` and the pytest command above report identically.
 
 Covered: URDF parsing, the bridge safety cycle, FK/IK and tool offsets vs
 MuJoCo, cartesian step + mirror reflection over real UDP, the full

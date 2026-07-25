@@ -8,7 +8,9 @@ orientation-locked carry -> align -> force-guarded insert -> QC verify ->
 place to ACCEPT/REJECT bin -> retreat. Every transition is logged; the log
 (see logs/cycle_001.json) is the seed of the SCADA dashboard.
 
-Measured reference cycle: 42.4 s — inside the spec's 60 s takt target.
+Measured reference cycle: 42.6 s — inside the spec's 60 s takt target
+(``logs/cycle_001.json``, regenerated with ``--no-render`` after M2's
+force-regulated insert replaced the Phase-1 tau watchdog in S4).
 
 Usage:
     python make_control_model.py /path/to/skate_teleop/skt_v3
@@ -16,16 +18,17 @@ Usage:
     python make_cell_scene.py /path/to/skate_teleop/skt_v3
     python demo_cell_cycle.py --model /path/to/skate_teleop/skt_v3 \
         --out cycle.mp4 --log cycle.json
+
+``--no-render`` runs the same cycle without a GL context and writes only the
+log — the way ``logs/cycle_001.json`` is regenerated on a headless machine.
 """
 import argparse
 import json
 import os
 import sys
 
-import imageio
 import mujoco
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sequencer import Cell, run_cycle  # noqa: E402
@@ -40,6 +43,7 @@ TOTAL_S = 43.0
 
 
 def load_fonts():
+    from PIL import ImageFont
     base = "/usr/share/fonts/truetype/dejavu/"
     try:
         return (ImageFont.truetype(base + "DejaVuSerif-Bold.ttf", 20),
@@ -56,6 +60,8 @@ def main():
     ap.add_argument("--log", default="cycle_log.json")
     ap.add_argument("--fps", type=int, default=20)
     ap.add_argument("--size", default="960x720", help="WxH")
+    ap.add_argument("--no-render", action="store_true",
+                    help="run the cycle headless (no GL context) and write only --log")
     args = ap.parse_args()
     w, h = (int(x) for x in args.size.lower().split("x"))
 
@@ -64,6 +70,17 @@ def main():
     for _ in range(500):
         mujoco.mj_step(m, d)
 
+    if args.no_render:                       # same cycle, no renderer, no imageio/PIL
+        cell = Cell(m, d)
+        cell.t0 = d.time
+        run_cycle(cell)
+        json.dump(cell.log, open(args.log, "w"), indent=1)
+        print(f"saved {args.log}")
+        print("cycle time: %.1f s (takt target 60 s)" % cell.log[-1]["cycle_time_s"])
+        return
+
+    import imageio
+    from PIL import Image, ImageDraw
     FONT, FONT2 = load_fonts()
     r = mujoco.Renderer(m, h, w)
     cam = mujoco.MjvCamera()

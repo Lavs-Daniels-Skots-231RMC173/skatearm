@@ -316,7 +316,8 @@ def main():
     ap = argparse.ArgumentParser(description="SkateArm bimanual benchmark suite")
     ap.add_argument("--model", required=True, help="path to skate_teleop/skt_v3")
     ap.add_argument("--trials", type=int, default=5)
-    ap.add_argument("--tasks", default="reach,carry,insert")
+    ap.add_argument("--tasks", default="reach,carry,insert,insert_m2",
+                    help=f"comma-separated; choose from {', '.join(TASKS)}")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--json", default=None, help="write the full report as JSON")
     args = ap.parse_args()

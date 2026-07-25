@@ -108,7 +108,7 @@ Skate Commander integrates best-in-class open-source robotics tools — each **o
 
 | Integration | What it is | Role in the cockpit | Licence | Enable |
 |---|---|---|---|---|
-| **[mink](https://github.com/kevinzakka/mink)** | MuJoCo differential-IK QP solver | Self-collision-avoiding drag-IK backend — keeps a safe standoff from torso / legs / other arm as a hard constraint (**+14 mm** vs −90 mm penetration) | `Apache-2.0` | `--ik mink` |
+| **[mink](https://github.com/kevinzakka/mink)** | MuJoCo differential-IK QP solver | Self-collision-avoiding drag-IK backend — keeps a safe standoff from torso / legs / other arm as a hard constraint (**+13 mm** vs −90 mm penetration) | `Apache-2.0` | `--ik mink` |
 | **[rerun.io](https://rerun.io)** | Multimodal 3D + time-series viewer | Scrub-able telemetry beside the twin — the **meshed robot** in 3D plus per-arm joint / IK / manipulability plots | `Apache-2.0 / MIT` | `--rerun` |
 | **[LeRobot](https://huggingface.co/docs/lerobot)** | Hugging Face robot-learning stack & dataset standard | Export teach-in / teleop demos as a **LeRobotDataset v3.0** → train ACT / Diffusion Policy / π0 | `Apache-2.0` | `⤓ LeRobot` |
 
@@ -504,14 +504,14 @@ The demonstrator task, end to end in simulation: the left arm fixtures a base pa
 
 | Key number | Result |
 |---|---|
-| Cycle time | **42.4 s** (takt target ≤ 60 s) |
-| QC residual, alignment (camera vs sim oracle) | ±1.3 mm |
+| Cycle time | **42.6 s** (takt target ≤ 60 s) |
+| QC residual, alignment (camera vs sim oracle) | ±1.6 mm |
 | QC residual, insertion depth | ±3.4 mm |
 | Accept rate | functional — only 2 cycles logged so far (sample too small for a true rate; tracked live on the dashboard) |
 
 Dashboard live previews: **[overview](https://raw.githack.com/dsl-robotics/skatearm/main/dashboard/preview_overview.html)** · **[cycle detail](https://raw.githack.com/dsl-robotics/skatearm/main/dashboard/preview_cycle.html)** — code in [dashboard/](dashboard/), sequencer in [sim/sequencer.py](sim/sequencer.py), QC in [sim/qc.py](sim/qc.py).
 
-<sub>→ Phase 1's τ-watchdog insert and weld grasp are since replaced by real contact-force control — see the **[Manipulation core](#manipulation-core-contact-force-control)** below.</sub>
+<sub>→ Phase 1's τ-watchdog insert is since replaced by real contact-force control — the cycle above runs the force-regulated S4. The grasp is still the weld stand-in *inside the cycle*; the weld-free actuated gripper ships beside it (grasp → carry → place on the arm), and wiring it into S1 is the open follow-up. See the **[Manipulation core](#manipulation-core-contact-force-control)** below.</sub>
 
 ## Manipulation core (contact-force control)
 
@@ -527,9 +527,9 @@ Dashboard live previews: **[overview](https://raw.githack.com/dsl-robotics/skate
 | Phase | What shipped | Key result (sim) | In CI |
 |---|---|---|---|
 | **M1** · wrist F/T sensing | a 6-axis force/torque sensor on each wrist — the real contact wrench, not the τ proxy | sensor vs analytic **< 0.05 N / N·m** | [test_ft_sensor.py](sim/test_ft_sensor.py) |
-| **M2** · force-regulated insertion | axial admittance + spiral bore-search — replaces the "1.4 mm/cycle + τ-watchdog" descent | misalignment tolerance **0–4 mm 6/6**, 6 mm 5/6 (open-loop ≤1/6); θ-tilt ≤9° levelled to <2°; round **H9** bore; peak force ~3 N | [test_insertion.py](sim/test_insertion.py) · [eval](sim/eval_insertion.py) |
-| **M3** · Cartesian compliance | TCP admittance (yield-at-stiffness), a bimanual compliant carry, and a cockpit *compliant* contact mode | **e = F/K** across a 16× stiffness sweep; a real +8 N push yields the TCP ~21 mm and returns | [test_admittance.py](sim/test_admittance.py) · [test_carry.py](sim/test_carry.py) |
-| **M4** · actuated gripper | parallel-jaw gripper, grasp-force control, a grasp-slip curve, and a weld-free grasp-carry-**place** on the arm | grasp tracks target **2–5 N**; slip payload grows with grasp force; part carried (~5 mm drift) and **placed in a bin — no weld** | [test_gripper.py](sim/test_gripper.py) · [test_gripper_arm.py](sim/test_gripper_arm.py) |
+| **M2** · force-regulated insertion | axial admittance + spiral bore-search — replaces the "1.4 mm/cycle + τ-watchdog" descent | misalignment tolerance **2–4 mm 6/6**, 6 mm 5/6, 8 mm 3/6 (open-loop ≤1/6); a 9.3° θ-tilt levelled to <2°; round **H9** bore; peak force ≤4.6 N (abort 9) | [test_insertion.py](sim/test_insertion.py) · [eval](sim/eval_insertion.py) · [data](sim/eval_data/insertion.json) |
+| **M3** · Cartesian compliance | TCP admittance (yield-at-stiffness), a bimanual compliant carry, and a cockpit *compliant* contact mode | **e = F/K** across a 16× stiffness sweep; a real +8 N push yields the TCP ~21 mm and returns | [test_admittance.py](sim/test_admittance.py) · [test_carry.py](sim/test_carry.py) · [data](sim/eval_data/admittance.json) |
+| **M4** · actuated gripper | parallel-jaw gripper, grasp-force control, a grasp-slip curve, and a weld-free grasp-carry-**place** on the arm | grasp tracks target **2–5 N**; slip payload grows with grasp force; part carried (~5 mm drift) and **placed in a bin — no weld** | [test_gripper.py](sim/test_gripper.py) · [test_gripper_arm.py](sim/test_gripper_arm.py) · [data](sim/eval_data/gripper.json) |
 
 <div align="center">
   <img src="docs/img/gripper_grasp.gif" width="330" alt="M4 grasp-force control: the jaws close on a part and hold it by friction, then release">
@@ -610,7 +610,7 @@ Tools get built because SkateArm needs them — then released standalone:
 | [`skate_commander`](tools/skate_commander/) | Web cockpit — browser digital twin: drag-IK, mirror-mode motion, RRT-Connect routing, teach-in programs, optional mink / rerun.io / LeRobot backends, live telemetry ([full feature catalogue](#skate-commander--web-cockpit) · [live preview](https://raw.githack.com/dsl-robotics/skatearm/main/tools/skate_commander/preview.html)) | ✅ **v0.8.5** (real-camera passthrough waits for hardware) |
 | Control-ready MJCF | skt_v3 with actuators, ready for control work | ✅ first version in [sim/](sim/) |
 | Teleop dataset hub | Bimanual datasets in LeRobot format | planned |
-| [MuJoCo benchmark suite](sim/benchmark.py) | Repeatable bimanual tasks — reach · carry · peg-insert — with quantitative metrics, headless &amp; seeded | ✅ **first version in [sim/](sim/)** |
+| [MuJoCo benchmark suite](sim/benchmark.py) | Repeatable bimanual tasks — reach · carry · peg-insert · force-regulated peg-insert — with quantitative metrics, headless &amp; seeded | ✅ **first version in [sim/](sim/)** |
 | URDF/config validator | Sanity-check tool for Skate configs | planned |
 | Getting-started handbook | From unboxing to first teleop | planned |
 
