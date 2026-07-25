@@ -2,8 +2,15 @@ fastapi>=0.110
 uvicorn>=0.27
 websockets>=12          # uvicorn needs this for the /ws telemetry channel
 numpy>=1.26
-# the wire layer comes from ../skate_ros2 (same repo); mujoco only if you
-# want the local sim endpoint / collision guard:
-# mujoco>=3.0
-# tests are plain scripts (no pytest); test_ws_e2e.py additionally needs:
-# httpx>=0.27
+
+# The wire layer comes from ../skate_ros2 (same repo) — no pip package.
+#
+# Optional, not installed by this file:
+#   mujoco==3.10.0   local sim endpoint, collision guard and every model-gated
+#                    test. CI pins this exact version; SIM mode needs it, REAL
+#                    mode does not.
+#   pytest           the test suite is pytest, not plain scripts.
+#   httpx>=0.27      fastapi.testclient.TestClient (test_ws_e2e.py) — an *extra*
+#                    of fastapi, so `pip install fastapi` alone will not pull it.
+#
+# To run the tests:  pip install -r requirements.txt "mujoco==3.10.0" pytest httpx

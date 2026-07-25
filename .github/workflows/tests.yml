@@ -29,6 +29,8 @@ jobs:
           tools/skate_ros2_control/test/test_make_control_urdf.py
       - name: ACT eval numbers match committed raw data (no GPU)
         run: pytest -q tools/skate_commander/examples/act_reach/test_eval_numbers.py
+      - name: Manipulation eval numbers match committed raw data (no MuJoCo)
+        run: pytest -q sim/test_manipulation_numbers.py
 
   sim-model:
     name: model-gated tests (MuJoCo guard / planner / IK / URDF)
@@ -40,8 +42,10 @@ jobs:
           python-version: "3.11"
       - name: Install deps (cockpit + MuJoCo, pinned)
         run: pip install -r tools/skate_commander/requirements.txt "mujoco==3.10.0" pytest
-      - name: Fetch the official skt_v3 model
-        run: git clone --depth 1 https://github.com/Rbotic/skate_teleop.git
+      - name: Fetch the official skt_v3 model (pinned)
+        run: |
+          git clone --filter=blob:none --no-checkout https://github.com/Rbotic/skate_teleop.git
+          git -C skate_teleop checkout 1622ac2d9a3a2747e441c354145c3d0b7fc0fc50
       - name: Build the control + collision + cell models
         run: |
           python sim/make_control_model.py skate_teleop/skt_v3
@@ -67,3 +71,28 @@ jobs:
         env:
           SKT_DIR: skate_teleop/skt_v3
         run: pytest -q sim/test_insertion.py
+
+      - name: Cartesian admittance — e = F/K, push-and-yield (M3)
+        env:
+          SKT_DIR: skate_teleop/skt_v3
+        run: pytest -q sim/test_admittance.py
+
+      - name: Bimanual compliant carry — internal-force regulation (M3+)
+        env:
+          SKT_DIR: skate_teleop/skt_v3
+        run: pytest -q sim/test_carry.py
+
+      - name: Grasp-force control and slip curve (M4)
+        env:
+          SKT_DIR: skate_teleop/skt_v3
+        run: pytest -q sim/test_gripper.py
+
+      - name: Weld-free grasp, carry and place (M4 capstone)
+        env:
+          SKT_DIR: skate_teleop/skt_v3
+        run: pytest -q sim/test_gripper_arm.py
+
+      - name: Cockpit contact modes — stop vs compliant (M3+)
+        env:
+          SKT_DIR: skate_teleop/skt_v3
+        run: pytest -q tools/skate_commander/test/test_compliant.py
