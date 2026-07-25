@@ -16,7 +16,8 @@ from benchmark import load_cell
 from eval_admittance import stage_arm
 from admittance import Admittance
 
-MODEL_DIR = sys.argv[1] if len(sys.argv) > 1 else r"C:\Users\dino3\skate_teleop\skt_v3"
+MODEL_DIR = (sys.argv[1] if len(sys.argv) > 1
+             else os.environ.get("SKT_DIR", "/tmp/skate_teleop/skt_v3"))
 GIF = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                    "docs", "img", "push_and_yield.gif")
 

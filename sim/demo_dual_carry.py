@@ -21,7 +21,8 @@ import xml.etree.ElementTree as ET
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import primitives as P
 
-MODEL_DIR = sys.argv[1] if len(sys.argv) > 1 else r"C:\Users\dino3\skate_teleop\skt_v3"
+MODEL_DIR = (sys.argv[1] if len(sys.argv) > 1
+             else os.environ.get("SKT_DIR", "/tmp/skate_teleop/skt_v3"))
 SCENE = os.path.join(MODEL_DIR, "skt_v3_carry.xml")
 GIF = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "img", "dual_carry.gif")
 GY, GZ, WX = 0.392, 0.16, 0.085      # grasp y, z; natural wrist x-separation (measured)

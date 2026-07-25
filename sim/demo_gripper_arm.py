@@ -14,7 +14,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from make_gripper_cell import make
 from gripper_arm import grasp_carry_place
 
-MODEL_DIR = sys.argv[1] if len(sys.argv) > 1 else r"C:\Users\dino3\skate_teleop\skt_v3"
+MODEL_DIR = (sys.argv[1] if len(sys.argv) > 1
+             else os.environ.get("SKT_DIR", "/tmp/skate_teleop/skt_v3"))
 GIF = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                    "docs", "img", "gripper_arm_place.gif")
 
