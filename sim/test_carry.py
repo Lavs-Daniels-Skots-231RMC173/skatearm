@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -40,7 +41,7 @@ def _carry():
 def test_compliant_carry_yields_and_holds():
     st = _carry()
     if st is None:
-        print(f"SKIP: {_SKIP}"); return
+        pytest.skip(_SKIP)
     import mujoco
     from carry import CompliantCarry
     m, d, armL, armR = st
@@ -68,6 +69,5 @@ def test_compliant_carry_yields_and_holds():
           f"returned {np.round(back,1)} mm, bar held (z={d.xpos[bar][2]:.3f})")
 
 
-if __name__ == "__main__":
-    test_compliant_carry_yields_and_holds()
-    print("CARRY (M3+) TEST DONE")
+if __name__ == "__main__":                 # direct run = pytest run, so a
+    raise SystemExit(pytest.main([__file__, "-q", "-s"]))   # skip reads as "s"

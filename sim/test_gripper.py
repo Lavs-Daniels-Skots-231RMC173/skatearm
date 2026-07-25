@@ -18,6 +18,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 _M = None
@@ -55,7 +57,7 @@ def _grasp(f_target, settle=250):
 
 def test_grasp_force_control_tracks_target():
     if _model() is None:
-        print(f"SKIP: {_SKIP}"); return
+        pytest.skip(_SKIP)
     _, _, m2 = _grasp(2.0)
     _, _, m4 = _grasp(4.0)
     assert abs(m2 - 2.0) < 0.6, m2                     # measured grasp reaches 2 N
@@ -66,7 +68,7 @@ def test_grasp_force_control_tracks_target():
 
 def test_friction_hold_without_weld():
     if _model() is None:
-        print(f"SKIP: {_SKIP}"); return
+        pytest.skip(_SKIP)
     g, z0, meas = _grasp(3.0)
     assert g.holds(z0), g.part_pos()                   # held by friction after the pin releases
     assert abs(g.part_pos()[2] - z0) < 0.01, g.part_pos()   # barely moved
@@ -77,7 +79,7 @@ def test_friction_hold_without_weld():
 
 def test_grasp_slip_grows_with_force():
     if _model() is None:
-        print(f"SKIP: {_SKIP}"); return
+        pytest.skip(_SKIP)
     def slip_at(ft):
         g, _, _ = _grasp(ft, settle=60)
         return g.slip_payload(g.part_pos()[2])
@@ -88,8 +90,5 @@ def test_grasp_slip_grows_with_force():
     print(f"PASS grasp-slip: 2N grasp slips at {s2} N, 5N grasp at {s5} N")
 
 
-if __name__ == "__main__":
-    test_grasp_force_control_tracks_target()
-    test_friction_hold_without_weld()
-    test_grasp_slip_grows_with_force()
-    print("GRIPPER (M4 scoped) TEST DONE")
+if __name__ == "__main__":                 # direct run = pytest run, so a
+    raise SystemExit(pytest.main([__file__, "-q", "-s"]))   # skip reads as "s"

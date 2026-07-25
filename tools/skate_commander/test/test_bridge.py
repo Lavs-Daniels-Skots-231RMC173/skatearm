@@ -8,11 +8,16 @@ import time
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skate_ros2"))
 
 from skate_commander.bridge import RobotBridge          # noqa: E402
+
+
+SKT = Path(os.environ.get("SKT_DIR", "/tmp/skate_teleop/skt_v3"))
+MODEL = os.environ.get("SKATE_MJCF", str(SKT / "skt_v3_control.xml"))
 
 
 def _free_port():
@@ -31,9 +36,9 @@ def _spin(bridge, seconds, ui=True, hz=60):
 
 
 def test_bridge_full_cycle():
-    model = os.environ.get("SKATE_MJCF", "/tmp/skate_teleop/skt_v3/skt_v3_control.xml")
+    model = MODEL
     if not Path(model).exists():
-        print("SKIP: no control model"); return
+        pytest.skip("no control model")
     from skate_ros2.sim_endpoint import SkateSimEndpoint
 
     port = _free_port()
@@ -85,13 +90,12 @@ def test_bridge_full_cycle():
 def test_cart_step_and_mirror():
     """v0.5: cartesian step-jog auto-clears on arrival; mirror mode reflects
     jog / slider / IK input onto the other arm with the measured sign map."""
-    model_xml = os.environ.get("SKATE_MJCF",
-                               "/tmp/skate_teleop/skt_v3/skt_v3_control.xml")
+    model_xml = MODEL
     if not Path(model_xml).exists():
-        print("SKIP: no control model"); return
+        pytest.skip("no control model")
     urdf = Path(model_xml).parent / "skt_v3.urdf"
     if not urdf.exists():
-        print("SKIP: no URDF next to the control model"); return
+        pytest.skip("no URDF next to the control model")
     from skate_commander.kinematics import ArmKinematics
     from skate_commander.server import compute_mirror_map
     from skate_commander.urdf import joint_limits, parse_urdf
@@ -305,14 +309,6 @@ def test_seq_routes_around_collision():
     br.close()
 
 
-if __name__ == "__main__":
-    test_home_glide_smooth()
-    test_contact_reflex()
-    test_seq_routes_around_collision()
-    test_bridge_full_cycle(); print("PASS test_bridge_full_cycle")
-    test_cart_step_and_mirror()
-
-
 def test_set_speed_clamps_and_scales():
     """F4 global speed override: clamps to 0.1-1.0, ignores bad input,
     and feeds the jog + glide cruise scaling."""
@@ -422,9 +418,9 @@ def test_observe_mode():
     """OBSERVE: the cockpit attaches as a pure observer next to an EXTERNAL
     commander on one shared sim endpoint — telemetry in, zero commands out,
     and both OBSERVE transitions land safely in E-STOP."""
-    model = os.environ.get("SKATE_MJCF", "/tmp/skate_teleop/skt_v3/skt_v3_control.xml")
+    model = MODEL
     if not Path(model).exists():
-        print("SKIP: no control model"); return
+        pytest.skip("no control model")
     from skate_ros2.sim_endpoint import SkateSimEndpoint
     from skate_ros2.protocol import SkateLink
 
@@ -481,3 +477,7 @@ def test_observe_mode():
     br.close()
     th.join(timeout=30)
     ep.close()
+
+
+if __name__ == "__main__":                 # direct run = pytest run, so a
+    raise SystemExit(pytest.main([__file__, "-q", "-s"]))   # skip reads as "s"

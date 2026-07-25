@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 HANDS = {"ee_left": "wrist_a3_1", "ee_right": "wrist_a3_Mirror__1"}
 
@@ -55,7 +56,7 @@ def _world(m, d, name):
 def test_ft_sensor_reads_applied_force():
     mujoco, m = _load()
     if m is None:
-        print("SKIP: mujoco / control model not available"); return
+        pytest.skip("mujoco / control model not available")
     d = mujoco.MjData(m)
     for site, body in HANDS.items():
         hid = m.body(body).id
@@ -74,7 +75,7 @@ def test_ft_sensor_reads_applied_force():
 def test_ft_sensor_reads_applied_torque():
     mujoco, m = _load()
     if m is None:
-        print("SKIP: mujoco / control model not available"); return
+        pytest.skip("mujoco / control model not available")
     d = mujoco.MjData(m)
     site, body = "ee_right", HANDS["ee_right"]
     hid = m.body(body).id
@@ -90,7 +91,5 @@ def test_ft_sensor_reads_applied_torque():
     print("PASS ft-torque: wrist reads applied torque to < 0.05 N·m")
 
 
-if __name__ == "__main__":
-    test_ft_sensor_reads_applied_force()
-    test_ft_sensor_reads_applied_torque()
-    print("FT-SENSOR TEST DONE")
+if __name__ == "__main__":                 # direct run = pytest run, so a
+    raise SystemExit(pytest.main([__file__, "-q", "-s"]))   # skip reads as "s"

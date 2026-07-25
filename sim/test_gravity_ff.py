@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -42,7 +43,7 @@ def _reach_sag(grav_ff):
 def test_gravity_ff_cancels_sag():
     off, on = _reach_sag(False), _reach_sag(True)
     if off is None or on is None:
-        print("SKIP: mujoco / control model not available"); return
+        pytest.skip("mujoco / control model not available")
     err_off, _ = off
     err_on, leaked_on = on
     assert err_off > 0.015, f"expected a visible sag without ff ({err_off*1000:.1f} mm)"
@@ -53,6 +54,5 @@ def test_gravity_ff_cancels_sag():
           "qfrc_applied cleared on exit")
 
 
-if __name__ == "__main__":
-    test_gravity_ff_cancels_sag()
-    print("GRAVITY-FF TEST DONE")
+if __name__ == "__main__":                 # direct run = pytest run, so a
+    raise SystemExit(pytest.main([__file__, "-q", "-s"]))   # skip reads as "s"

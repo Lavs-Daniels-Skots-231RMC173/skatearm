@@ -16,6 +16,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 _STAGE = None
@@ -50,7 +52,7 @@ def _run(offset_xy, search):
 def test_nominal_seats():
     st = _staged()
     if st is None:
-        print(f"SKIP: {_SKIP}"); return
+        pytest.skip(_SKIP)
     r = _run([0.0, 0.0], True)
     assert r["seated"] and not r["aborted"] and r["peak_wrench_n"] < 8.5, r
     print(f"PASS nominal: seated, peak {r['peak_wrench_n']} N, depth {r['depth_mm']} mm")
@@ -59,7 +61,7 @@ def test_nominal_seats():
 def test_search_recovers_3mm():
     st = _staged()
     if st is None:
-        print(f"SKIP: {_SKIP}"); return
+        pytest.skip(_SKIP)
     r = _run([0.003, 0.0], True)
     assert r["seated"] and not r["aborted"], r
     print(f"PASS 3mm+search: seated, rel_xy {r['rel_xy_mm']} mm, depth {r['depth_mm']} mm")
@@ -68,7 +70,7 @@ def test_search_recovers_3mm():
 def test_no_search_jams_8mm():
     st = _staged()
     if st is None:
-        print(f"SKIP: {_SKIP}"); return
+        pytest.skip(_SKIP)
     r = _run([0.008, 0.0], False)
     assert not r["seated"], r
     print(f"PASS 8mm no-search: not seated (rel_xy {r['rel_xy_mm']} mm, depth {r['depth_mm']} mm)")
@@ -80,7 +82,7 @@ def test_theta_levels_and_seats():
     peg while it inserts."""
     st = _staged()
     if st is None:
-        print(f"SKIP: {_SKIP}"); return
+        pytest.skip(_SKIP)
     from eval_insertion import run_one_theta
     m, d, armR, snap, W0, bp, pg = _STAGE
     r = run_one_theta(m, d, armR, snap, W0, bp, pg, 12, [0.0, 1.0, 0.0])
@@ -96,7 +98,7 @@ def test_round_bore_seats():
     with a wider lead-in mouth (make_cell_scene --round-bore). Generated to a SIDE
     model so the square default and the shared staging above are untouched."""
     if _staged() is None:
-        print(f"SKIP: {_SKIP}"); return
+        pytest.skip(_SKIP)
     import mujoco
     from make_cell_scene import make
     from eval_insertion import stage, snapshot, run_one
@@ -110,10 +112,5 @@ def test_round_bore_seats():
           f"depth {r['depth_mm']} mm, peak {r['peak_wrench_n']} N")
 
 
-if __name__ == "__main__":
-    test_nominal_seats()
-    test_search_recovers_3mm()
-    test_no_search_jams_8mm()
-    test_theta_levels_and_seats()
-    test_round_bore_seats()
-    print("INSERTION (M2) TEST DONE")
+if __name__ == "__main__":                 # direct run = pytest run, so a
+    raise SystemExit(pytest.main([__file__, "-q", "-s"]))   # skip reads as "s"

@@ -9,20 +9,24 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skate_ros2"))
 
 
+SKT = Path(os.environ.get("SKT_DIR", "/tmp/skate_teleop/skt_v3"))
+MODEL = os.environ.get("SKATE_MJCF", str(SKT / "skt_v3_control.xml"))
+
+
 def test_ws_jog_roundtrip():
-    model_xml = os.environ.get("SKATE_MJCF",
-                               "/tmp/skate_teleop/skt_v3/skt_v3_control.xml")
-    skt_dir = os.environ.get("SKT_DIR", "/tmp/skate_teleop/skt_v3")
+    model_xml, skt_dir = MODEL, str(SKT)
     if not Path(model_xml).exists():
-        print("SKIP: no control model"); return
+        pytest.skip("no control model")
     try:
         from fastapi.testclient import TestClient
     except ImportError:
-        print("SKIP: fastapi not installed"); return
+        pytest.skip("fastapi not installed")
 
     from skate_commander.server import build_app
     from skate_ros2.sim_endpoint import SkateSimEndpoint
@@ -71,5 +75,5 @@ def test_ws_jog_roundtrip():
     th.join(timeout=5)
 
 
-if __name__ == "__main__":
-    test_ws_jog_roundtrip(); print("PASS test_ws_jog_roundtrip")
+if __name__ == "__main__":                 # direct run = pytest run, so a
+    raise SystemExit(pytest.main([__file__, "-q", "-s"]))   # skip reads as "s"

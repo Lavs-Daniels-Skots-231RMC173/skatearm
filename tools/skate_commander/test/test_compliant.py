@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -51,7 +52,7 @@ def _kin_bridge():
 def test_compliant_yields_to_F_over_K_and_returns():
     br = _kin_bridge()
     if br is None:
-        print("SKIP: no skt_v3.urdf (set SKT_DIR)"); return
+        pytest.skip("no skt_v3.urdf (set SKT_DIR)")
     assert br.set_contact_mode("compliant") == "compliant"
     arm = "right"
     base = br.kin[arm].fk(br.targ).copy()
@@ -73,7 +74,5 @@ def test_compliant_yields_to_F_over_K_and_returns():
     br.close()
 
 
-if __name__ == "__main__":
-    test_default_is_stop_and_still_latches()
-    test_compliant_yields_to_F_over_K_and_returns()
-    print("COMPLIANT-MODE TEST DONE")
+if __name__ == "__main__":                 # direct run = pytest run, so a
+    raise SystemExit(pytest.main([__file__, "-q", "-s"]))   # skip reads as "s"

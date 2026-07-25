@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -51,7 +52,7 @@ def test_commanded_stiffness():
     """e = F/K per axis: compliant x/z yield, stiff y holds, spring returns."""
     st = _armed()
     if st is None:
-        print(f"SKIP: {_SKIP}"); return
+        pytest.skip(_SKIP)
     from admittance import Admittance
     m, d, arm = st
     K = [400.0, 1600.0, 400.0]
@@ -75,7 +76,7 @@ def test_push_and_yield():
     the pushed axis and returns to nominal on release."""
     st = _armed()
     if st is None:
-        print(f"SKIP: {_SKIP}"); return
+        pytest.skip(_SKIP)
     import mujoco  # noqa: F401
     from admittance import Admittance
     m, d, arm = st
@@ -100,7 +101,5 @@ def test_push_and_yield():
           f"returned to {np.round(back,1)} mm")
 
 
-if __name__ == "__main__":
-    test_commanded_stiffness()
-    test_push_and_yield()
-    print("ADMITTANCE (M3) TEST DONE")
+if __name__ == "__main__":                 # direct run = pytest run, so a
+    raise SystemExit(pytest.main([__file__, "-q", "-s"]))   # skip reads as "s"

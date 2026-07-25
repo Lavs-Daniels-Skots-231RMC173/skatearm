@@ -17,6 +17,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 _M = None
@@ -43,7 +45,7 @@ def _model():
 def test_grasp_and_carry_weld_free():
     m = _model()
     if m is None:
-        print(f"SKIP: {_SKIP}"); return
+        pytest.skip(_SKIP)
     from gripper_arm import grasp_and_carry
     r = grasp_and_carry(m)
     assert r["grasp_n"] > 3.0, r                       # gripped near the 5 N target
@@ -58,7 +60,7 @@ def test_grasp_and_carry_weld_free():
 def test_grasp_carry_place_weld_free():
     m = _model()
     if m is None:
-        print(f"SKIP: {_SKIP}"); return
+        pytest.skip(_SKIP)
     from gripper_arm import grasp_carry_place
     r = grasp_carry_place(m)
     assert r["grasp_n"] > 3.0, r                       # gripped near the target
@@ -69,7 +71,5 @@ def test_grasp_carry_place_weld_free():
           f"part_z {r['part_z']} m, placed {r['placed']}")
 
 
-if __name__ == "__main__":
-    test_grasp_and_carry_weld_free()
-    test_grasp_carry_place_weld_free()
-    print("GRIPPER-ARM (M4) TEST DONE")
+if __name__ == "__main__":                 # direct run = pytest run, so a
+    raise SystemExit(pytest.main([__file__, "-q", "-s"]))   # skip reads as "s"

@@ -12,14 +12,16 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skate_ros2"))
 
 from skate_commander.bridge import RobotBridge          # noqa: E402
 from skate_commander.program import ProgramRunner       # noqa: E402
 
-MODEL = os.environ.get("SKATE_MJCF",
-                       "/tmp/skate_teleop/skt_v3/skt_v3_control.xml")
+SKT = Path(os.environ.get("SKT_DIR", "/tmp/skate_teleop/skt_v3"))
+MODEL = os.environ.get("SKATE_MJCF", str(SKT / "skt_v3_control.xml"))
 
 
 def _free_port():
@@ -81,7 +83,7 @@ def _wait(pred, timeout=10.0):
 
 def test_program_runs_moves_and_logs():
     if not Path(MODEL).exists():
-        print("SKIP: no control model"); return
+        pytest.skip("no control model")
     rig = _Rig()
     r = ProgramRunner(rig.br)
     code = "\n".join([
@@ -102,7 +104,7 @@ def test_program_runs_moves_and_logs():
 
 def test_click_to_step_and_stop():
     if not Path(MODEL).exists():
-        print("SKIP: no control model"); return
+        pytest.skip("no control model")
     rig = _Rig()
     r = ProgramRunner(rig.br)
     code = "rbt.movej('L4', 30)\nrbt.movej('L4', 70)\nrbt.wait(30)"
@@ -130,7 +132,7 @@ def test_click_to_step_and_stop():
 
 def test_estop_kills_program_and_sandbox_holds():
     if not Path(MODEL).exists():
-        print("SKIP: no control model"); return
+        pytest.skip("no control model")
     rig = _Rig()
     r = ProgramRunner(rig.br)
     assert r.run("rbt.wait(30)")
@@ -162,7 +164,7 @@ def test_teach_in_record_and_replay():
     """REC full circle: manual moves -> settled keyposes -> generated rbt
     code -> replay reproduces the pose (through the same safe bridge)."""
     if not Path(MODEL).exists():
-        print("SKIP: no control model"); return
+        pytest.skip("no control model")
     from skate_commander.program import PoseRecorder
     rig = _Rig()
     rec = PoseRecorder()
@@ -200,9 +202,5 @@ def test_teach_in_record_and_replay():
     rig.close()
 
 
-if __name__ == "__main__":
-    test_program_runs_moves_and_logs()
-    test_click_to_step_and_stop()
-    test_estop_kills_program_and_sandbox_holds()
-    test_teach_in_record_and_replay()
-    print("ALL PROGRAM-RUNNER E2E GREEN")
+if __name__ == "__main__":                 # direct run = pytest run, so a
+    raise SystemExit(pytest.main([__file__, "-q", "-s"]))   # skip reads as "s"

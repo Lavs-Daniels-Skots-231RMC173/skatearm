@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -24,10 +25,10 @@ from skate_ros2.protocol import SkateLink       # noqa: E402
 
 
 def _find_model():
-    p = os.environ.get("SKATE_MJCF")
-    if p and Path(p).exists():
-        return p
-    return None
+    """$SKATE_MJCF wins; otherwise the repo-wide $SKT_DIR convention."""
+    skt = Path(os.environ.get("SKT_DIR", "/tmp/skate_teleop/skt_v3"))
+    p = os.environ.get("SKATE_MJCF") or str(skt / "skt_v3_control.xml")
+    return p if Path(p).exists() else None
 
 
 def _free_port():
@@ -42,12 +43,10 @@ def test_observer_sees_commanders_motion():
     try:
         import mujoco  # noqa: F401
     except ImportError:
-        print("SKIP: mujoco not installed")
-        return
+        pytest.skip("mujoco not installed")
     model = _find_model()
     if model is None:
-        print("SKIP: set $SKATE_MJCF to skt_v3_control.xml")
-        return
+        pytest.skip("no control model (set $SKT_DIR or $SKATE_MJCF)")
 
     from skate_ros2.sim_endpoint import SkateSimEndpoint
 
@@ -113,12 +112,10 @@ def test_reported_q_snaps_limit_epsilon():
     try:
         import mujoco  # noqa: F401
     except ImportError:
-        print("SKIP: mujoco not installed")
-        return
+        pytest.skip("mujoco not installed")
     model = _find_model()
     if model is None:
-        print("SKIP: set $SKATE_MJCF to skt_v3_control.xml")
-        return
+        pytest.skip("no control model (set $SKT_DIR or $SKATE_MJCF)")
 
     from skate_ros2.sim_endpoint import SkateSimEndpoint
 
@@ -134,7 +131,5 @@ def test_reported_q_snaps_limit_epsilon():
 
 
 
-if __name__ == "__main__":
-    test_observer_sees_commanders_motion()
-    test_reported_q_snaps_limit_epsilon()
-    print("OK")
+if __name__ == "__main__":                 # direct run = pytest run, so a
+    raise SystemExit(pytest.main([__file__, "-q", "-s"]))   # skip reads as "s"
