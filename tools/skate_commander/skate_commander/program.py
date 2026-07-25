@@ -57,9 +57,9 @@ class _SandboxError(ValueError):
 
 class _Sandbox(ast.NodeVisitor):
     """AST allow-list run before a program is compiled. It rejects the nodes that
-    enable the classic ``exec``-sandbox escapes — imports, and any dunder name or
-    attribute access (``__class__`` / ``__globals__`` / ``__subclasses__`` /
-    ``__builtins__`` / ``__import__`` …). Combined with the restricted builtins,
+    enable the classic ``exec``-sandbox escapes — imports, and any private or
+    dunder attribute access (``__class__`` / ``__globals__`` / ``__subclasses__``
+    / ``__builtins__`` / ``__import__`` …). Combined with the restricted builtins,
     this blocks ``().__class__.__base__.__subclasses__()`` style break-outs.
     (Still a local-tool guard, not a hostile-multi-tenant boundary.)
     """
@@ -74,7 +74,11 @@ class _Sandbox(ast.NodeVisitor):
     _BANNED_ATTR = frozenset({"format", "format_map"})
 
     def visit_Attribute(self, node):
-        if isinstance(node.attr, str) and (node.attr.startswith("__")
+        # A SINGLE leading underscore is enough to reject: RobotAPI keeps its
+        # runner on ``self._r``, so allowing ``_``-private attributes would hand
+        # a program ``rbt._r.bridge`` — the whole bridge, E-STOP and limits
+        # included. The public program API is underscore-free by construction.
+        if isinstance(node.attr, str) and (node.attr.startswith("_")
                                            or node.attr in self._BANNED_ATTR):
             raise _SandboxError(f"access to attribute '{node.attr}' is not allowed")
         self.generic_visit(node)

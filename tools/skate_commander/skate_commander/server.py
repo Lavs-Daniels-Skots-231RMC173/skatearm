@@ -26,6 +26,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .bridge import RobotBridge
 from .kinematics import ArmKinematics, reach_map
+from .origin import origin_allowed
 from .program import PoseRecorder, ProgramRunner
 from .urdf import joint_limits, parse_urdf
 from . import camera, detect, grasp, ibvs, nl, vision
@@ -736,17 +737,9 @@ def build_app(model_dir, real_host="r.local", sim_port=2000,
         return FileResponse(path, media_type="application/octet-stream")
 
     def _ws_origin_ok(sock):
-        """Cross-site WebSocket guard (DNS-rebinding defense): a browser sends an
-        Origin from the page that opened the socket. Allow only same-host origins
-        (the cockpit page itself) or no Origin at all (native clients like the
-        bridge); a hostile external page (evil.com) is refused before accept."""
-        from urllib.parse import urlparse
-        origin = sock.headers.get("origin")
-        if not origin:
-            return True
-        host = (urlparse(origin).hostname or "").lower()
-        server_host = (sock.headers.get("host") or "").split(":")[0].lower()
-        return host in ("localhost", "127.0.0.1", "::1") or host == server_host
+        """Cross-site WebSocket guard — see origin.origin_allowed for the rule
+        and why a same-host comparison alone does not stop DNS rebinding."""
+        return origin_allowed(sock.headers.get("origin"), sock.headers.get("host"))
 
     @app.websocket("/ws")
     async def ws(sock: WebSocket):
