@@ -13,6 +13,10 @@ Faithful to the firmware contract:
 * listens on UDP :2000, streams telemetry to every client heard from
   recently (multi-peer: e.g. a ROS 2 driver commanding + a cockpit observing);
 * telemetry = pickled ``(id, obj)`` with the official classes (ids 0–3);
+* one documented EXTENSION beyond the firmware: id 6 streams the wrist
+  force/torque wrenches when the model carries the M1 F/T sensors. The real
+  Skate has no such sensor and never sends id 6 — clients must treat its
+  absence as normal (see :data:`skate_ros2.protocol.WRENCH_ID`);
 * accepts ``(5, (targ_pos, vel_cmd, height_cmd, deadman))`` commands;
 * firmware watchdog: no COMMAND for 0.3 s -> deadman assumed (0,0,0);
   heartbeats keep telemetry flowing but do not extend the deadman (so an
@@ -44,9 +48,13 @@ import numpy as np
 from . import names
 from . import shared_classes_def as SCD
 from .protocol import (BUFFER_SIZE, COMMAND_ID, DEFAULT_PORT, STALE_AFTER,
-                       pack_datagrams, unpack_packet)
+                       WRENCH_ID, pack_datagrams, unpack_packet)
 
 PEER_TTL = 3.0   # s; a client silent this long stops receiving telemetry
+
+# arm -> site carrying the M1 wrist F/T pair (<site>_force / <site>_torque),
+# as emitted by sim/make_control_model.py.
+WRIST_SITES = {"left": "ee_left", "right": "ee_right"}
 
 
 class SkateSimEndpoint:
@@ -91,6 +99,23 @@ class SkateSimEndpoint:
         self.decode_errors = 0
         self._frag_id = 0             # rolling id for large-telemetry fragments
         self._stop = False
+
+        # Wrist F/T discovery is TOLERANT: a control MJCF built before the M1
+        # sensors were added is still a valid robot, it just has no wrench to
+        # report, and id 6 is then simply never sent. Missing sensors must not
+        # turn into a load-time failure for a model that is otherwise fine.
+        self.wrist_sites = {}
+        for arm, site in WRIST_SITES.items():
+            try:
+                self.m.site(site)
+                self.m.sensor(site + "_force")
+                self.m.sensor(site + "_torque")
+            except KeyError:
+                continue
+            self.wrist_sites[arm] = site
+        if self.verbose and not self.wrist_sites:
+            print("[sim_endpoint] no wrist F/T sensors in this model — "
+                  "telemetry id 6 (wrist wrench) will not be sent")
 
         # settle into the model's initial pose
         self.d.ctrl[:] = np.clip(self.d.qpos[:names.N_JOINTS], self.lo, self.hi)
@@ -210,6 +235,32 @@ class SkateSimEndpoint:
         q = np.where(np.abs(q - self.hi) < snap, self.hi, q)
         return q
 
+    def _wrist_wrench(self):
+        """The measured wrist wrenches as a plain dict, or None if this model
+        has no F/T sensors.
+
+        MuJoCo reports a site force/torque sensor in the SITE frame, so each
+        vector is rotated into world with the site's own orientation --
+        identical to ``sim/test_ft_sensor.py::_world``, which is what the M1
+        calibration test pins. The sign is left exactly as measured: the
+        sensor reports the REACTION the wrist carries (a 10 N downward pull on
+        the hand reads +10 N up), which is the same convention the
+        joint-torque estimator in the cockpit bridge already returns, so the
+        two backends are interchangeable without a negation anywhere.
+
+        Not tared. The no-load reading is ~0.4 N -- the hand's own weight --
+        because that is what a real F/T cell reads before you zero it.
+        """
+        if not self.wrist_sites:
+            return None
+        w = {"t": float(self.d.time)}
+        for arm, site in self.wrist_sites.items():
+            R = np.asarray(self.d.site(site).xmat, dtype=np.float64).reshape(3, 3)
+            f = R @ np.asarray(self.d.sensor(site + "_force").data, dtype=np.float64)
+            m = R @ np.asarray(self.d.sensor(site + "_torque").data, dtype=np.float64)
+            w[arm] = {"f": [float(x) for x in f], "m": [float(x) for x in m]}
+        return w
+
     def send_telemetry(self):
         if not self.peers:
             return
@@ -234,6 +285,10 @@ class SkateSimEndpoint:
         ins.out_quat = np.array([1.0, 0.0, 0.0, 0.0])  # static upright (w,x,y,z)
         ins.out_grav_vec = np.array([0.0, 0.0, -9.81])
         self._send(3, ins)
+
+        w = self._wrist_wrench()
+        if w is not None:
+            self._send(WRENCH_ID, w)
 
         if self.last_cmd is not None:
             mc = SCD.motor_command()

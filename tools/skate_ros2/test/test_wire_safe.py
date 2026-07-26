@@ -97,3 +97,71 @@ def test_numpy_array_still_roundtrips():
     arr = np.arange(6, dtype=np.float64).reshape(2, 3)
     _id, got = protocol.decode_packet(pickle.dumps((2, arr)))
     assert isinstance(got, np.ndarray) and got.shape == (2, 3) and got[1, 2] == 5.0
+
+
+_WRENCH = {"t": 1.25,
+           "left": {"f": [0.0, 0.0, 0.3998], "m": [0.01, -0.02, 0.0]},
+           "right": {"f": [-1.5, 2.0, 10.0], "m": [0.0, 0.0, 0.0]}}
+
+
+def test_wrench_resolves_zero_globals():
+    """The id-6 wrench decodes with the allow-list EMPTIED.
+
+    dicts, strings, floats and lists are pickle primitives, so a wrench packet
+    never reaches ``find_class`` -- which is the whole reason it is a dict and
+    not a new class: streaming the wrist F/T reading widens the attack surface
+    by exactly nothing. The second half of the test is what keeps the first
+    half honest -- with the same empty allow-list a normal telemetry packet
+    must fail, or this would pass without proving anything.
+    """
+    blob = pickle.dumps((protocol.WRENCH_ID, _WRENCH))
+    saved = protocol._SAFE_GLOBALS
+    protocol._SAFE_GLOBALS = frozenset()     # nothing whatsoever is resolvable
+    try:
+        pkt_id, got = protocol.decode_packet(blob)
+        assert pkt_id == protocol.WRENCH_ID == 6
+        assert got["right"]["f"][2] == 10.0 and got["left"]["m"][1] == -0.02
+
+        try:
+            protocol.decode_packet(pickle.dumps((2, SCD.state_est())))
+            assert False, "empty allow-list resolved a class — test is vacuous"
+        except pickle.UnpicklingError:
+            pass
+    finally:
+        protocol._SAFE_GLOBALS = saved
+
+
+def test_no_wrench_class_was_invented():
+    """shared_classes_def stays a faithful mirror of the firmware's classes.
+
+    The real Skate has no wrist F/T sensor and no CAN message for one. Adding a
+    'wrench' class here would have put a message on the wire that the robot
+    cannot send and quietly turned the vendored mirror into fiction.
+    """
+    assert not [c for c in dir(SCD) if "wrench" in c.lower()]
+    assert protocol._SCD_CLASSES == ("motor_command", "motor_state",
+                                     "state_est", "INS_fusion_state",
+                                     "FeedbackResp")
+    assert protocol.TELEMETRY_IDS[protocol.WRENCH_ID] == "wrist_wrench"
+
+
+def test_wrenches_drops_malformed_arms():
+    """A decoded wrench is untrusted wire data: an arm that isn't two finite
+    3-vectors is dropped, not passed up half-valid to a force display."""
+    st = protocol.TelemetryState()
+    assert st.wrenches() is None                      # nothing seen yet
+
+    assert st.update(protocol.WRENCH_ID, _WRENCH)
+    assert sorted(st.wrenches()) == ["left", "right"]  # "t" is not an arm
+
+    st.update(protocol.WRENCH_ID,
+              {"t": 0.0,
+               "left": {"f": [1.0, 2.0, 3.0], "m": [0.0, 0.0, 0.0]},
+               "right": {"f": [1.0, 2.0], "m": [0.0, 0.0, 0.0]},     # short
+               "bad_nan": {"f": [float("nan")] * 3, "m": [0.0] * 3},
+               "bad_str": {"f": ["a", "b", "c"], "m": [0.0] * 3},
+               "bad_type": "not a dict"})
+    assert list(st.wrenches()) == ["left"]
+
+    st.update(protocol.WRENCH_ID, ["not", "a", "dict"])
+    assert st.wrenches() is None

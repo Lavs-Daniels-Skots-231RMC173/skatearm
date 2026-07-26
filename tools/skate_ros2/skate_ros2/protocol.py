@@ -9,6 +9,9 @@ and confirmed by the official Skate docs):
   4 controller_states (classes in :mod:`skate_ros2.shared_classes_def`).
 * Command  client -> robot: ``pickle.dumps((5, (targ_pos[26], vel_cmd[3],
   height_cmd, (estop_WB, estop_LA, estop_RA))))``; flags 0 = dampen.
+* Extension, SIM ONLY: id 6 carries a wrist force/torque wrench (see
+  :data:`WRENCH_ID`). The real Skate has no wrist F/T sensor and never sends
+  it, so a client must treat its absence as normal, not as a fault.
 * Heartbeat: the robot streams only to the address it last heard from; the
   official client pings ``b"yo"`` every 0.3 s. If the robot hears nothing for
   0.3 s it assumes deadman ``(0, 0, 0)`` and dampens — that watchdog lives in
@@ -49,12 +52,30 @@ HEARTBEAT_PERIOD = 0.3   # s, official client value
 STALE_AFTER = 0.3        # s, telemetry older than this counts as disconnected
 COMMAND_ID = 5
 
+# Wrist force/torque wrench, SIM ONLY -- the real Skate has no wrist F/T sensor
+# and never sends this id, so a client must treat its absence as normal.
+#
+# The payload is deliberately a plain nested dict of Python floats:
+#
+#     {"t": float,                                   # sender's monotonic stamp
+#      "left":  {"f": [fx, fy, fz], "m": [mx, my, mz]},
+#      "right": {...}}                               # world frame, N and N*m
+#
+# dicts, strings, floats and lists are pickle PRIMITIVES -- decoding one never
+# calls find_class, so this id resolves zero globals and needs no _SAFE_GLOBALS
+# entry. Inventing a shared_classes_def class for it would have widened the
+# allow-list and put a message on the wire the firmware does not have; a dict
+# costs neither.
+WRENCH_ID = 6
+
 TELEMETRY_IDS = {
     0: "motor_commands",
     1: "motor_states",
     2: "state_estimates",
     3: "ins",
     4: "controller_states",
+    # 5 is COMMAND_ID (client -> robot), so the extension starts at 6.
+    WRENCH_ID: "wrist_wrench",
 }
 
 
@@ -221,6 +242,7 @@ class TelemetryState:
         self.state_estimates = None  # SCD.state_est
         self.ins = None              # SCD.INS_fusion_state
         self.controller_states = None
+        self.wrist_wrench = None     # plain dict, sim only (see WRENCH_ID)
         self.stamps = {}             # field name -> time.monotonic()
         self.n_packets = 0
 
@@ -274,6 +296,38 @@ class TelemetryState:
         if self.motor_states is None:
             return None
         return names.can_dict_to_vector(self.motor_states.motor_temp)
+
+    def wrenches(self):
+        """Measured wrist wrenches as ``{arm: {"f": [3], "m": [3]}}``, or None.
+
+        Sim only -- a real Skate never sends id 6, so None here means "this
+        robot has no wrist F/T sensor", not "the link is broken"; callers fall
+        back to a joint-torque estimate.
+
+        The payload is decoded from the wire, so nothing about its shape is
+        trusted: an arm whose entry is not two finite 3-vectors is dropped
+        rather than passed up as a half-valid wrench. A malformed packet
+        therefore degrades to the estimator instead of poisoning a force
+        display -- or a compliance loop -- with junk.
+        """
+        w = self.wrist_wrench
+        if not isinstance(w, dict):
+            return None
+        out = {}
+        for arm, d in w.items():
+            if arm == "t" or not isinstance(d, dict):
+                continue
+            try:
+                f = [float(x) for x in d["f"]]
+                m = [float(x) for x in d["m"]]
+            except (KeyError, TypeError, ValueError):
+                continue
+            if len(f) != 3 or len(m) != 3:
+                continue
+            if not all(np.isfinite(v) for v in f + m):
+                continue
+            out[str(arm)] = {"f": f, "m": m}
+        return out or None
 
 
 class SkateLink:

@@ -16,6 +16,8 @@
 
 ## 1 · Where we are today (grounded in the code)
 
+*This section is the **pre-M1 baseline** — the state that motivated the plan, kept as written so the gap it describes stays legible. M1–M4 below have since shipped and supersede the "Force sensing" and "Compliance" rows in particular; read §3 for what the tree does today.*
+
 | Concern | Today | Verdict |
 |---|---|---|
 | Arm control | MuJoCo `position` servos (kp = 100, joint damping 2.0, armature 0.05); DLS-IK to Cartesian targets; gravity via an open-loop `mj_rne` feed-forward | **real, but position-only** — no force feedback |
@@ -35,7 +37,18 @@ A manipulation core that **(1) measures** the contact wrench at the wrist, **(2)
 ## 3 · Phased plan
 
 ### M1 — Wrist force/torque sensing in sim  *(foundation, low-risk)*
-- **Status — shipped.** The `force`+`torque` sensors are in `make_control_model.py` (inherited by the collision + cell scenes) and validated by `sim/test_ft_sensor.py` (both wrists read a known static load to < 0.05 N / N·m; run in CI). The wrench is now the control signal for M2's force-regulated insertion below — which supersedes the "re-express the guard as a threshold" idea with true force *regulation*. (Surfacing the wrench in the cockpit telemetry/plots remains an optional follow-up.)
+- **Status — shipped.** The `force`+`torque` sensors are in `make_control_model.py` (inherited by the collision + cell scenes) and validated by `sim/test_ft_sensor.py` (both wrists read a known static load to < 0.05 N / N·m; run in CI). The wrench is now the control signal for M2's force-regulated insertion below — which supersedes the "re-express the guard as a threshold" idea with true force *regulation*.
+- **Status — on the wire and in the cockpit.** `sim_endpoint` streams both wrist wrenches as telemetry **id 6** (`skate_ros2.protocol.WRENCH_ID`), and the cockpit's force overlay draws the *measured* wrench per arm — magnitude in N, the moment in N·m, labelled `F/T` — instead of the joint-torque estimate. Three things about that path are deliberate. **(1)** Discovery is tolerant: a control MJCF built before M1 simply has no sensors, so id 6 is never sent, and a client must treat its absence as normal rather than as a fault — which is exactly the real Skate's case. **(2)** The payload is a plain nested dict of floats, not a new class. dicts, floats and lists are pickle *primitives*, so a wrench packet resolves **zero globals** through the wire's restricted unpickler: streaming it widens the attack surface by nothing, and `shared_classes_def.py` stays a faithful mirror of the firmware's CAN messages rather than gaining a message the robot cannot send. **(3)** The streamed value is pinned to the sensor reading *bit-for-bit* and again physically (< 0.05 N under known loads, the same bound `test_ft_sensor.py` asserts), because the failure this guards against — a lost frame rotation or a flipped sign — is invisible to a test that only checks the field is present. `tools/skate_ros2/test/test_wrist_wrench.py`, `test_wire_safe.py` and `tools/skate_commander/test/test_force.py`, all in CI. What did **not** change: the cockpit's *compliant contact reflex* (M3 below) still runs on `_tcp_force`'s joint-torque estimate. Switching a display is additive; switching a control loop is a behaviour change that needs its own tests and its own eval, so it is scoped separately rather than smuggled in here.
+- **Either backend can back it — measured, not assumed.** That is the "Sim ↔ hardware" requirement below, answered with numbers. The selection is per arm and tagged in the payload (`src`: `sensor` | `estimate`), so one cell and one bare wrist is a supported configuration and the readout never hides which one you are reading. It matters which one you get. Measured on the *same settled state*, with each backend compared against its own no-load baseline (error = ‖Δ − (−F)‖):
+
+  | applied load (N) | sensor, home | estimate, home | sensor, working | estimate, working |
+  |---|---|---|---|---|
+  | [0, 0, −10] | 0.000 | **9.699** | 0.000 | 4.170 |
+  | [10, 0, 0] | 0.000 | 0.856 | 0.000 | 3.251 |
+  | [0, 8, 0] | 0.000 | **26.550** | 0.000 | 1.371 |
+  | [5, −5, −5] | 0.000 | 5.772 | 0.000 | 0.760 |
+
+  Left wrist; the right tracks it within ~2 N. At the **home** pose the arm is near-singular (σ_min(J) = 0.0205) and `(J·Jᵀ)⁻¹` amplifies whatever torque noise lands in the collapsing direction: the estimate recovers **0.31 N of a 10 N vertical pull** — a 97 % miss — and **invents 26.5 N of phantom vertical force** under an 8 N *lateral* load. At a well-conditioned **working** pose (σ_min = 0.0770) it is still **0.760–4.262 N** off on 10 N-class loads. The sensor reads all four to 0.000 N at both poses. So the measurement wins wherever it exists and the estimate is the fallback for hardware with no cell — not the reverse — and a compliance loop running on the estimate at a folded pose is a known hazard, not a detail. Reproduce: `python sim/eval_wrench_backends.py --model .../skt_v3 --json sim/eval_data/wrench_backends.json`. **Raw data:** [`sim/eval_data/wrench_backends.json`](../sim/eval_data/wrench_backends.json), pinned to this prose by `sim/test_manipulation_numbers.py` in CI. (The estimate column is the cockpit's own `RobotBridge._tcp_force`, called on the joint arrays the endpoint actually puts on the wire — not a re-implementation of it.)
 - **Goal:** a true 6-axis contact wrench at each wrist, replacing the actuator-torque proxy.
 - **Do:** add a MuJoCo `force`+`torque` sensor pair on a site at each wrist flange; surface the wrench in the telemetry schema and the cockpit plots; re-express the insertion guard as a *wrench* threshold.
 - **Replaces:** the `tau_R()` sum-of-`actuatorfrc` watchdog → a real wrench signal.

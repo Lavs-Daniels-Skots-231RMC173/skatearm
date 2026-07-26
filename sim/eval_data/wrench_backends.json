@@ -1,0 +1,411 @@
+{
+  "eval": "wrench_backends",
+  "milestone": "M1",
+  "source": "sim/eval_wrench_backends.py",
+  "loads_n": [
+    [
+      0.0,
+      0.0,
+      -10.0
+    ],
+    [
+      10.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      8.0,
+      0.0
+    ],
+    [
+      5.0,
+      -5.0,
+      -5.0
+    ]
+  ],
+  "poses": {
+    "home": {
+      "pose": "home",
+      "arms": {
+        "left": {
+          "sigma_min_j": 0.0205,
+          "baseline_sensor_n": [
+            0.0,
+            0.0,
+            0.3998
+          ],
+          "baseline_estimate_n": [
+            -1.288,
+            0.015,
+            0.163
+          ],
+          "rows": [
+            {
+              "load_n": [
+                0.0,
+                0.0,
+                -10.0
+              ],
+              "sensor_delta_n": [
+                -0.0,
+                -0.0,
+                10.0
+              ],
+              "sensor_err_n": 0.0,
+              "estimate_delta_n": [
+                -0.328,
+                0.005,
+                0.307
+              ],
+              "estimate_err_n": 9.699
+            },
+            {
+              "load_n": [
+                10.0,
+                0.0,
+                0.0
+              ],
+              "sensor_delta_n": [
+                -10.0,
+                -0.0,
+                0.0
+              ],
+              "sensor_err_n": 0.0,
+              "estimate_delta_n": [
+                -10.675,
+                0.07,
+                0.521
+              ],
+              "estimate_err_n": 0.856
+            },
+            {
+              "load_n": [
+                0.0,
+                8.0,
+                0.0
+              ],
+              "sensor_delta_n": [
+                -0.0,
+                -8.0,
+                0.0
+              ],
+              "sensor_err_n": 0.0,
+              "estimate_delta_n": [
+                0.06,
+                -9.016,
+                26.53
+              ],
+              "estimate_err_n": 26.55
+            },
+            {
+              "load_n": [
+                5.0,
+                -5.0,
+                -5.0
+              ],
+              "sensor_delta_n": [
+                -5.0,
+                5.0,
+                5.0
+              ],
+              "sensor_err_n": 0.0,
+              "estimate_delta_n": [
+                -5.644,
+                4.975,
+                10.736
+              ],
+              "estimate_err_n": 5.772
+            }
+          ],
+          "sensor_err_max_n": 0.0,
+          "estimate_err_max_n": 26.55
+        },
+        "right": {
+          "sigma_min_j": 0.0205,
+          "baseline_sensor_n": [
+            -0.0,
+            0.0,
+            0.3998
+          ],
+          "baseline_estimate_n": [
+            1.288,
+            0.015,
+            0.163
+          ],
+          "rows": [
+            {
+              "load_n": [
+                0.0,
+                0.0,
+                -10.0
+              ],
+              "sensor_delta_n": [
+                0.0,
+                -0.0,
+                10.0
+              ],
+              "sensor_err_n": 0.0,
+              "estimate_delta_n": [
+                0.328,
+                0.005,
+                0.307
+              ],
+              "estimate_err_n": 9.699
+            },
+            {
+              "load_n": [
+                10.0,
+                0.0,
+                0.0
+              ],
+              "sensor_delta_n": [
+                -10.0,
+                -0.0,
+                0.0
+              ],
+              "sensor_err_n": 0.0,
+              "estimate_delta_n": [
+                -10.488,
+                -0.119,
+                -1.999
+              ],
+              "estimate_err_n": 2.061
+            },
+            {
+              "load_n": [
+                0.0,
+                8.0,
+                0.0
+              ],
+              "sensor_delta_n": [
+                0.0,
+                -8.0,
+                0.0
+              ],
+              "sensor_err_n": 0.0,
+              "estimate_delta_n": [
+                -0.06,
+                -9.016,
+                26.53
+              ],
+              "estimate_err_n": 26.55
+            },
+            {
+              "load_n": [
+                5.0,
+                -5.0,
+                -5.0
+              ],
+              "sensor_delta_n": [
+                -5.0,
+                5.0,
+                5.0
+              ],
+              "sensor_err_n": 0.0,
+              "estimate_delta_n": [
+                -5.247,
+                4.843,
+                9.567
+              ],
+              "estimate_err_n": 4.576
+            }
+          ],
+          "sensor_err_max_n": 0.0,
+          "estimate_err_max_n": 26.55
+        }
+      }
+    },
+    "working": {
+      "pose": "working",
+      "arms": {
+        "left": {
+          "sigma_min_j": 0.077,
+          "baseline_sensor_n": [
+            -0.0,
+            -0.0,
+            0.3998
+          ],
+          "baseline_estimate_n": [
+            -1.819,
+            -0.984,
+            8.679
+          ],
+          "rows": [
+            {
+              "load_n": [
+                0.0,
+                0.0,
+                -10.0
+              ],
+              "sensor_delta_n": [
+                -0.0,
+                0.0,
+                10.0
+              ],
+              "sensor_err_n": 0.0,
+              "estimate_delta_n": [
+                0.71,
+                -0.239,
+                14.102
+              ],
+              "estimate_err_n": 4.17
+            },
+            {
+              "load_n": [
+                10.0,
+                0.0,
+                0.0
+              ],
+              "sensor_delta_n": [
+                -10.0,
+                -0.0,
+                -0.0
+              ],
+              "sensor_err_n": 0.0,
+              "estimate_delta_n": [
+                -10.197,
+                1.64,
+                -2.8
+              ],
+              "estimate_err_n": 3.251
+            },
+            {
+              "load_n": [
+                0.0,
+                8.0,
+                0.0
+              ],
+              "sensor_delta_n": [
+                0.0,
+                -8.0,
+                -0.0
+              ],
+              "sensor_err_n": 0.0,
+              "estimate_delta_n": [
+                0.24,
+                -8.104,
+                1.346
+              ],
+              "estimate_err_n": 1.371
+            },
+            {
+              "load_n": [
+                5.0,
+                -5.0,
+                -5.0
+              ],
+              "sensor_delta_n": [
+                -5.0,
+                5.0,
+                5.0
+              ],
+              "sensor_err_n": 0.0,
+              "estimate_delta_n": [
+                -4.969,
+                5.718,
+                4.753
+              ],
+              "estimate_err_n": 0.76
+            }
+          ],
+          "sensor_err_max_n": 0.0,
+          "estimate_err_max_n": 4.17
+        },
+        "right": {
+          "sigma_min_j": 0.077,
+          "baseline_sensor_n": [
+            0.0,
+            -0.0,
+            0.3998
+          ],
+          "baseline_estimate_n": [
+            1.819,
+            -0.984,
+            8.679
+          ],
+          "rows": [
+            {
+              "load_n": [
+                0.0,
+                0.0,
+                -10.0
+              ],
+              "sensor_delta_n": [
+                0.0,
+                0.0,
+                10.0
+              ],
+              "sensor_err_n": 0.0,
+              "estimate_delta_n": [
+                -0.71,
+                -0.239,
+                14.102
+              ],
+              "estimate_err_n": 4.17
+            },
+            {
+              "load_n": [
+                10.0,
+                0.0,
+                0.0
+              ],
+              "sensor_delta_n": [
+                -10.0,
+                0.0,
+                0.0
+              ],
+              "sensor_err_n": 0.0,
+              "estimate_delta_n": [
+                -10.732,
+                -2.004,
+                3.689
+              ],
+              "estimate_err_n": 4.262
+            },
+            {
+              "load_n": [
+                0.0,
+                8.0,
+                0.0
+              ],
+              "sensor_delta_n": [
+                -0.0,
+                -8.0,
+                -0.0
+              ],
+              "sensor_err_n": 0.0,
+              "estimate_delta_n": [
+                -0.24,
+                -8.104,
+                1.346
+              ],
+              "estimate_err_n": 1.371
+            },
+            {
+              "load_n": [
+                5.0,
+                -5.0,
+                -5.0
+              ],
+              "sensor_delta_n": [
+                -5.0,
+                5.0,
+                5.0
+              ],
+              "sensor_err_n": 0.0,
+              "estimate_delta_n": [
+                -5.57,
+                4.026,
+                8.161
+              ],
+              "estimate_err_n": 3.356
+            }
+          ],
+          "sensor_err_max_n": 0.0,
+          "estimate_err_max_n": 4.262
+        }
+      }
+    }
+  }
+}

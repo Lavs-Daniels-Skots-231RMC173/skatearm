@@ -3320,15 +3320,22 @@ if ($("cam-obj")) $("cam-obj").onchange = () => { if (graspOn) drawGraspObjs(); 
 
 
 
-// ── TCP force — per-arm end-effector force estimate (N) as a 3D arrow ───────
+// ── TCP force — per-arm end-effector wrench as a 3D arrow ──────────────────
+// Two backends feed this: a MEASURED wrist F/T reading (src "sensor") when the
+// robot has a cell, and the joint-torque estimate (src "estimate") when it
+// doesn't. The label says which, because they are not equally good — see
+// bridge._tcp_wrench for the measured error table.
 (function setupForce() {
   const btn = $("btn-force");
   if (!btn) return;
   let on = false;
   const COL = 0x6AA0F8, HI_COL = 0xF5A623;           // accent-lt · amber when straining
   const SCALE = 0.006, MIN_N = 0.5, MAXL = 0.45, MINL = 0.08, HI_N = 12;
-  const arr = {}, labs = {}, lastTxt = {}, fsm = {};
-  const ALPHA = 0.08;                                // EMA on the force vector — the raw torque estimate is jittery in motion (~0.4 s time constant)
+  const arr = {}, labs = {}, lastTxt = {}, fsm = {}, fsrc = {};
+  // EMA per backend: the torque estimate is jittery in motion and needs heavy
+  // filtering (~0.6 s), a real F/T cell does not — smoothing it that hard would
+  // hide the contact transient the overlay exists to show (~0.1 s at 20 Hz).
+  const ALPHA_EST = 0.08, ALPHA_FT = 0.5;
   function hide() {
     for (const a in arr) if (arr[a]) arr[a].visible = false;
     for (const a in labs) if (labs[a]) labs[a].visible = false;
@@ -3342,9 +3349,11 @@ if ($("cam-obj")) $("cam-obj").onchange = () => { if (graspOn) drawGraspObjs(); 
         if (labs[a]) labs[a].visible = false;
         continue;
       }
+      const ft = d.src === "sensor";
+      if (fsrc[a] !== d.src) { fsm[a] = null; fsrc[a] = d.src; }  // never blend across a backend switch
       const raw = new THREE.Vector3(d.f[0], d.f[1], d.f[2]);
-      if (!fsm[a]) fsm[a] = raw.clone();             // low-pass the noisy torque estimate (EMA)
-      else fsm[a].lerp(raw, ALPHA);
+      if (!fsm[a]) fsm[a] = raw.clone();             // low-pass (EMA), harder on the estimate
+      else fsm[a].lerp(raw, ft ? ALPHA_FT : ALPHA_EST);
       const mag = fsm[a].length();
       if (mag < MIN_N) {                             // below the noise floor → hide
         if (arr[a]) arr[a].visible = false;
@@ -3367,10 +3376,17 @@ if ($("cam-obj")) $("cam-obj").onchange = () => { if (graspOn) drawGraspObjs(); 
       }
       arr[a].setColor(col);
       if (typeof makeLabel === "function") {                        // magnitude label at the tip
-        const key = Math.round(mag) + " N|" + col;
+        // "12 N / 0.42 Nm  F/T" measured vs "12 N  est" — the source is part of
+        // the reading, not a tooltip. Both numbers are quantised so the label
+        // texture is only rebuilt when the displayed digits actually change.
+        const nm = (ft && d.m) ? Math.hypot(d.m[0], d.m[1], d.m[2]) : null;
+        const txt = Math.round(mag) + " N"
+          + (nm !== null ? " / " + nm.toFixed(1) + " Nm" : "")
+          + (ft ? "  F/T" : "  est");
+        const key = txt + "|" + col;
         if (key !== lastTxt[a]) {                                   // recreate only when value/colour changes
           if (labs[a]) scene.remove(labs[a]);
-          labs[a] = makeLabel(Math.round(mag) + " N", col, true);
+          labs[a] = makeLabel(txt, col, true);
           labs[a].renderOrder = 8;
           scene.add(labs[a]);
           lastTxt[a] = key;

@@ -14,6 +14,8 @@ Regenerate the artefacts (needs the model) with::
         --json sim/eval_data/insertion_theta.json
     python sim/eval_admittance.py --model .../skt_v3 --json sim/eval_data/admittance.json
     python sim/eval_gripper.py    --model .../skt_v3 --json sim/eval_data/gripper.json
+    python sim/eval_wrench_backends.py --model .../skt_v3 \
+        --json sim/eval_data/wrench_backends.json
     python sim/benchmark.py       --model .../skt_v3 --trials 5 --seed 0 \
         --json sim/benchmark_results.json
     python sim/demo_cell_cycle.py --model .../skt_v3 --no-render --log logs/cycle_001.json
@@ -44,6 +46,53 @@ def ed(name):
 
 def rows_by_offset(node):
     return {r["offset_mm"]: r for r in node}
+
+
+# --------------------------------------------------------------------------- M1
+
+def test_wrench_backend_sensor_is_exact_at_both_poses():
+    """MANIPULATION.md M1: the wrist sensor reads every load to 0.000 N at both
+    poses — the printed form of the < 0.05 N bound sim/test_ft_sensor.py asserts.
+    Checked per row, not as an average: delta must be exactly -F."""
+    d = ed("wrench_backends.json")
+    assert d["loads_n"] == [[0, 0, -10], [10, 0, 0], [0, 8, 0], [5, -5, -5]]
+    for pose in ("home", "working"):
+        for arm, a in d["poses"][pose]["arms"].items():
+            assert a["sensor_err_max_n"] == 0.0, (pose, arm)
+            for r in a["rows"]:
+                assert r["sensor_delta_n"] == [-v for v in r["load_n"]], (pose, arm, r)
+            # untared: the no-load reading is the hand's own weight, ~0.4 N
+            assert round(a["baseline_sensor_n"][2], 1) == 0.4, (pose, arm)
+
+
+def test_wrench_backend_estimate_is_the_weaker_fallback():
+    """MANIPULATION.md M1 table (also quoted in README.md and sim/README.md):
+    at the near-singular home pose (sigma_min 0.0205) the joint-torque estimate
+    misses a 10 N vertical pull by 9.699 N and invents 26.550 N of phantom force
+    under an 8 N lateral one; at the working pose (0.0770) it is still
+    0.760-4.262 N off on 10 N-class loads."""
+    p = ed("wrench_backends.json")["poses"]
+
+    home = p["home"]["arms"]
+    assert {a["sigma_min_j"] for a in home.values()} == {0.0205}
+    for arm in ("left", "right"):
+        rows = {tuple(r["load_n"]): r for r in home[arm]["rows"]}
+        assert rows[(0.0, 0.0, -10.0)]["estimate_err_n"] == 9.699, arm
+        assert rows[(0.0, 8.0, 0.0)]["estimate_err_n"] == 26.550, arm
+        # 0.31 N recovered of a 10 N pull — the quoted 97% miss
+        assert round(rows[(0.0, 0.0, -10.0)]["estimate_delta_n"][2], 2) == 0.31, arm
+        # and the phantom force is on the vertical axis, not the loaded one
+        assert round(rows[(0.0, 8.0, 0.0)]["estimate_delta_n"][2], 1) == 26.5, arm
+
+    work = p["working"]["arms"]
+    assert {a["sigma_min_j"] for a in work.values()} == {0.0770}
+    errs = [r["estimate_err_n"] for a in work.values() for r in a["rows"]]
+    assert (min(errs), max(errs)) == (0.760, 4.262), errs
+
+    # the headline: better conditioning helps a lot and still is not enough
+    assert max(a["estimate_err_max_n"] for a in work.values()) < \
+        max(a["estimate_err_max_n"] for a in home.values())
+    assert min(errs) > max(a["sensor_err_max_n"] for a in work.values())
 
 
 # --------------------------------------------------------------------------- M2

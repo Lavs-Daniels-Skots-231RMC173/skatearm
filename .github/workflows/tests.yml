@@ -69,6 +69,16 @@ jobs:
           SKT_DIR: skate_teleop/skt_v3
         run: pytest -q sim/test_ft_sensor.py
 
+      - name: Wrist wrench on the wire — the streamed value IS the sensor reading (M1)
+        env:
+          SKT_DIR: skate_teleop/skt_v3
+        run: pytest -q tools/skate_ros2/test/test_wrist_wrench.py
+
+      - name: TCP wrench backends — measured F/T preferred, joint torques as fallback (M1)
+        env:
+          SKT_DIR: skate_teleop/skt_v3
+        run: pytest -q tools/skate_commander/test/test_force.py
+
       - name: Force-regulated insertion — misalignment recovery (M2)
         env:
           SKT_DIR: skate_teleop/skt_v3

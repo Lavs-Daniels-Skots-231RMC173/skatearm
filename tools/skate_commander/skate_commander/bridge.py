@@ -271,7 +271,8 @@ class RobotBridge:
 
     def set_show_force(self, on):
         """Toggle the TCP-force overlay — when on, snapshot() carries each arm's
-        TCP force estimate (N, world frame) derived from the joint torques."""
+        TCP wrench (N and N·m, world frame): the measured wrist F/T reading when
+        the robot streams one, the joint-torque estimate when it doesn't."""
         self.show_force = bool(on)
         return self.show_force
 
@@ -331,7 +332,42 @@ class RobotBridge:
                 F = np.zeros(3)
             out[arm] = {"p": [round(float(v), 4) for v in p],
                         "f": [round(float(v), 3) for v in F],
-                        "mag": round(float(np.linalg.norm(F)), 2)}
+                        "mag": round(float(np.linalg.norm(F)), 2),
+                        "m": None,          # position Jacobian: no moments
+                        "src": "estimate"}
+        return out
+
+    def _tcp_wrench(self, st):
+        """What the cockpit's force overlay draws: the MEASURED wrist wrench
+        where the robot has an F/T cell, the joint-torque estimate where it
+        doesn't — decided per arm and tagged with ``src``, so the readout never
+        hides which backend is live.
+
+        M1 asks that either can back this interface. It matters a great deal
+        which one you get. Against known loads applied to the same settled
+        state, the sim's wrist sensor is exact to the printed digit, while the
+        estimator at the home pose recovers 0.31 N of a 10 N vertical pull and
+        invents 26.5 N of phantom vertical force under an 8 N lateral one — the
+        arm is near-singular there (σ_min(J) = 0.02), and (J·Jᵀ)⁻¹ amplifies
+        whatever torque noise lands in the collapsing direction. Even at a
+        well-conditioned working pose (σ_min = 0.077) it is 0.76–4.27 N off on
+        10 N-class loads. So the measurement wins wherever it exists, and the
+        estimate is the fallback for hardware with no cell — not the reverse.
+        """
+        out = self._tcp_force(st)
+        if out is None:
+            return None          # no pose -> nowhere to anchor the arrow
+        meas = st.wrenches() if hasattr(st, "wrenches") else None
+        if not meas:
+            return out
+        for arm, d in meas.items():
+            if arm not in out:
+                continue         # a wrench for an arm we can't place: ignore
+            f = d["f"]
+            out[arm].update(f=[round(float(v), 3) for v in f],
+                            m=[round(float(v), 3) for v in d["m"]],
+                            mag=round(float(np.linalg.norm(f)), 2),
+                            src="sensor")
         return out
 
     def step(self, n=1):
@@ -1098,7 +1134,7 @@ class RobotBridge:
                           if (getattr(self, "show_collision", False)
                               and self.guard is not None
                               and hasattr(self.guard, "collision_view")) else None),
-            "force": (self._tcp_force(st)
+            "force": (self._tcp_wrench(st)
                       if getattr(self, "show_force", False) else None),
             "homing": self.home_active or self.plan_nodes is not None,
             "routing": (self.plan_nodes is not None

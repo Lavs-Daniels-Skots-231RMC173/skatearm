@@ -197,7 +197,7 @@
                 <!-- Point cloud overlay removed 2026-06-26 (camera under development) -->
                 <!-- Grasp overlay removed 2026-06-26 (camera under development) -->
                 <button id="btn-coll" class="tbtn" title="Collision model. Shows the capsule/box model the guard reasons over; geoms redden where they collide."><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.2"/><rect x="13" y="13" width="7.5" height="7.5" rx="1.2"/><path d="M11 7.2h4.3a1.5 1.5 0 0 1 1.5 1.5V13"/></svg><span>Collision</span><em class="ty">Guard</em></button>
-                <button id="btn-force" class="tbtn" title="TCP force. Each arm's end-effector force estimate (N) from joint torques, drawn as a 3D arrow at the TCP."><svg viewBox="0 0 24 24"><path d="M5 19L19 5"/><path d="M11 5h8v8"/></svg><span>TCP force</span><em class="ty">Wrench</em></button>
+                <button id="btn-force" class="tbtn" title="TCP wrench. Each arm's end-effector force drawn as a 3D arrow at the TCP: the measured wrist F/T reading where the robot has a sensor (label 'F/T', with the moment in Nm), the joint-torque estimate where it doesn't (label 'est')."><svg viewBox="0 0 24 24"><path d="M5 19L19 5"/><path d="M11 5h8v8"/></svg><span>TCP force</span><em class="ty">Wrench</em></button>
               </div>
             </div>
             <div id="layers-pop" class="layers-pop" style="display:none">
