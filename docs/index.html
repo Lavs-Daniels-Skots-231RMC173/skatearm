@@ -471,7 +471,7 @@
           <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4"/></svg><span><b>M1 &mdash; wrist force/torque sensing.</b> A 6-axis contact wrench at each wrist flange, checked against a known static load to <b>&lt;&nbsp;0.05&nbsp;N</b>. It replaces the sum-of-<code style="font-family:var(--mono);font-size:12px;color:var(--accent-lt)">actuatorfrc</code> proxy &mdash; you cannot regulate a force you cannot read.</span></li>
           <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4"/></svg><span><b>M2 &mdash; force-regulated insertion.</b> Axial admittance on the descent setpoint, plus a spiral bore search. Misalignment tolerance <b>6/6 at 2 and 4&nbsp;mm</b>, 5/6 at 6&nbsp;mm, 3/6 at 8&nbsp;mm &mdash; where the open-loop descent manages <b>&le;&nbsp;1/6</b>. Peak axial force stays 3.3&ndash;4.6&nbsp;N against a 9&nbsp;N abort, and a 9.3&deg; peg tilt is levelled to under 2&deg;.</span></li>
           <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4"/></svg><span><b>M3 &mdash; Cartesian admittance.</b> A virtual mass&ndash;spring&ndash;damper at the TCP: the arm yields to a contact wrench at a tunable per-axis stiffness. Over a <b>16&times;</b> stiffness sweep the yield lands on <b>e&nbsp;=&nbsp;F/K</b> exactly &mdash; 40/20/10/5/2.5&nbsp;mm under 8&nbsp;N &mdash; and springs back to the nominal pose on release.</span></li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4"/></svg><span><b>M4 &mdash; a real gripper.</b> Parallel jaws under closed-loop grasp-force control: 2&ndash;5&nbsp;N tracked to within <b>0.05&nbsp;N</b>, the part held by <b>friction, not a weld</b>, and a slip curve that scales the way friction should &mdash; a 5&nbsp;N grasp carries 5.25&nbsp;N before it lets go. Those jaws now run the <b>right hand of the live S0&ndash;S7 cycle</b> on an opt-in scene: grip at 12&nbsp;N, carry with 0.3&nbsp;mm of slip, insert, then <b>open to release</b> &mdash; camera-ACCEPT in 38.96&nbsp;s. The left hand still welds the base, so the cell is half-converted, not weld-free.</span></li>
+          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4"/></svg><span><b>M4 &mdash; a real gripper.</b> Parallel jaws under closed-loop grasp-force control: 2&ndash;5&nbsp;N tracked to within <b>0.05&nbsp;N</b>, the part held by <b>friction, not a weld</b>, and a slip curve that scales the way friction should &mdash; a 5&nbsp;N grasp carries 5.25&nbsp;N before it lets go. Those jaws now run <b>both hands of the live S0&ndash;S7 cycle</b> on an opt-in scene with <b>no weld active in it anywhere</b>: the left hand picks the base off the table at 12.00&nbsp;N on its own pad sensor and sets it at an assembly station (a weld held it in mid-air for free), the right closes on the peg against the same 12&nbsp;N target and carries it on friction alone with 0.42&nbsp;mm of slip, S4 inserts to <b>22.1&nbsp;mm at 2.98&nbsp;N</b>, both hands <b>open to release</b>, and the left re-grips the finished unit to bin it &mdash; 75.8&nbsp;s against the weld path's 42.6&nbsp;s.</span></li>
         </ul>
         <div class="nums" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:22px;max-width:420px;">
           <div style="border:1px solid var(--line);border-radius:10px;padding:11px 15px;background:rgba(30,34,42,.4);"><b style="display:block;font:700 19px var(--mono);font-variant-numeric:tabular-nums;color:#fff;">&lt;0.05 N</b><span style="font:500 12px var(--mono);color:var(--faint);">wrist wrench error</span></div>
@@ -504,6 +504,33 @@
         </div>
         <div class="ctas" style="margin-top:22px;">
           <a class="btn ghost" href="https://github.com/dsl-robotics/skatearm/blob/main/sim/test_manipulation_numbers.py" target="_blank" rel="noopener">See the guard test</a>
+        </div>
+      </div>
+    </div>
+    <div class="cell reveal">
+      <div>
+        <h3 style="font:700 24px var(--sans);letter-spacing:-.01em;">The last weld, removed &mdash; and what it turned out to be holding.</h3>
+        <p style="color:var(--fg2);margin-top:12px;max-width:520px;">Taking the weld off the second hand is not a re-skin of the same cycle. A weld holds the base in mid-air for free while the peg goes in; jaws have to <b>pick it off the table, set it down, let go, and pick the finished unit back up</b> &mdash; four real grip/release operations on the left hand and two on the right, each one reported by a pad force sensor, with both weld constraints sampled three times across the cycle and never once engaged. That is where the extra 33&nbsp;s goes: the takt bound moves 60&nbsp;s &rarr; 85&nbsp;s, and the test writes down which step spent each second of it rather than letting the bound absorb it unexplained.</p>
+        <div class="nums" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:18px;max-width:520px;">
+          <div><b>22.1 mm</b><span>insert at 2.98 N</span></div>
+          <div><b>0.43 mm</b><span>re-grip drift</span></div>
+          <div><b>75.8 s</b><span>cycle (takt &le; 85 s)</span></div>
+        </div>
+      </div>
+      <div class="frame"><div class="bar"><i></i><i></i><i></i><span class="tag">weld-free cell &middot; S3 align &rarr; S4 insert</span></div><video autoplay loop muted playsinline preload="none" poster="img/cell_cycle_gripper_poster.webp" aria-label="The weld-free work cell aligning and inserting the peg with both hands on actuated jaws"><source src="img/cell_gripper_demo.mp4" type="video/mp4"></video></div>
+    </div>
+    <div class="cell reveal">
+      <div class="frame">
+        <div class="bar"><i></i><i></i><i></i><span class="tag">QC inspection window &middot; weld path vs weld-free</span></div>
+        <img src="img/qc_occlusion_jaws.png" loading="lazy" alt="The 300 pixel QC inspection window on both paths: the weld path shows the peg and the pocket rim, the weld-free path shows the left tool blocking the view">
+      </div>
+      <div>
+        <h3 style="font:700 24px var(--sans);letter-spacing:-.01em;">It cost the camera gate. That is worth more than hiding it.</h3>
+        <p style="color:var(--fg2);margin-top:12px;max-width:520px;">With jaws on both wrists the left tool must approach top-down &mdash; the pocket faces up and the part is longer than the jaws open, so the orientation is forced &mdash; which parks the wrist between the overhead camera and the unit at exactly the pose inspection looks at. In the same 300&nbsp;px window, unchanged pipeline: the weld path sees <b>1116</b> peg pixels and <b>ACCEPT</b>s; the weld-free path sees <b>zero</b>, with 89&nbsp;% of the pocket rim gone, and <b>REJECT</b>s. Same probe on both, so the cell changed and not the measurement. <span style="color:var(--faint)">So the weld-free cycle is gated by the sim oracle and says so in its own event stream, and the published camera-QC numbers stay on the weld path where they were earned. A camera gate here needs inspection optics aimed at the assembly station &mdash; a second camera pair, not a re-calibration.</span></p>
+        <div class="nums" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:18px;max-width:520px;">
+          <div><b>1116 &rarr; 0</b><span>peg px in window</span></div>
+          <div><b>&minus;89 %</b><span>pocket rim seen</span></div>
+          <div><b>ACCEPT</b><span>on the sim oracle</span></div>
         </div>
       </div>
     </div>
