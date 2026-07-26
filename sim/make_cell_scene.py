@@ -10,9 +10,11 @@ lead-in mouth. Same peg either way; the round bore is OPT-IN so the default (and
 CI) stay on the square v1 stand-in.
 
 --gripper writes skt_v3_cell_gripper.xml instead: the same cell with M4's
-actuated parallel jaws on the RIGHT wrist, so S1/S4 can grip and release the peg
-for real rather than through the `grasp_right` weld. Also OPT-IN — the default
-model, every existing test and the left hand are untouched.
+actuated parallel jaws on BOTH wrists, so the whole cycle grips and releases for
+real rather than through the `grasp_right` / `grasp_left` welds. Both equalities
+are still emitted — the default model shares this builder and needs them — and
+the gripper path simply never engages either. Also OPT-IN: the default model and
+every existing test are untouched, byte for byte.
 
     python make_cell_scene.py /path/to/skate_teleop/skt_v3 [--round-bore] [--gripper]
 """
@@ -90,7 +92,7 @@ EQUALITY = """
 """
 
 
-# --- OPT-IN: M4's parallel jaws on the right wrist (--gripper) -------------
+# --- OPT-IN: M4's parallel jaws on BOTH wrists (--gripper) -----------------
 # MuJoCo's default solref (0.02 s time constant) scales constraint stiffness with
 # the constraint's effective mass. On a 6 g jaw that makes both the pad contacts
 # and the jaw's own end stop behave like ~4 kN/m springs: a 60 N close buries the
@@ -104,7 +106,7 @@ _C = math.sqrt(0.5)
 _T, _W, _L = 0.003, 0.008, 0.016   # pad plate half thickness / half width / half length
 
 
-def _vee_jaw(name, jnt, sign, reach, open_x, pad_y, mu):
+def _vee_jaw(name, jnt, sign, reach, open_x, pad_y, mu, tag=None):
     """One jaw: a slide joint along the wrist's local x carrying a 90 deg
     V-groove pad — two plates whose faces are tangent to the D20 peg, so it
     self-centres on four line contacts instead of squirting out of a flat pinch.
@@ -115,7 +117,7 @@ def _vee_jaw(name, jnt, sign, reach, open_x, pad_y, mu):
     D20 peg at 5.86 mm and the two plates would start colliding with each other
     at 8.7 mm.
     """
-    tag = name[-1]
+    tag = tag or name[-1]
     b = ET.Element("body", {"name": name, "pos": f"{sign*open_x} {reach} 0"})
     ET.SubElement(b, "joint", {
         "name": jnt, "type": "slide", "axis": "1 0 0", "damping": JAW_DAMP,
@@ -138,19 +140,67 @@ def _vee_jaw(name, jnt, sign, reach, open_x, pad_y, mu):
     return b
 
 
-def add_gripper(root):
-    """Bolt M4's jaws onto the RIGHT wrist of an already-built cell scene.
+LEFT_WRIST = "wrist_a3_1"
 
-    The LEFT hand deliberately keeps its `grasp_left` weld: there is only one
-    gripper on the robot, on wrist_a3_Mirror__1. `grasp_right` is left declared
-    but unused by the gripper path, so the same model can still run the weld
-    path as an A/B control.
+
+def _mount_jaws(root, wrist_name, names, act, sensors):
+    """Bolt one pair of V-groove jaws onto ``wrist_name``.
+
+    ``names`` is (left_jaw, right_jaw, left_joint, right_joint, left_tag,
+    right_tag); ``act`` the motor name; ``sensors`` the (touch, jointpos) pair.
+    Both hands are the SAME tool — same reach, same travel, same pads — so this
+    is one function called twice rather than two near-copies that can drift.
     """
-    from make_gripper_cell import WRIST, REACH, OPEN, PAD_Y, MU
+    from make_gripper_cell import REACH, OPEN, PAD_Y, MU
 
-    wrist = next(b for b in root.iter("body") if b.get("name") == WRIST)
-    wrist.append(_vee_jaw("jawL", "jL", -1, REACH, OPEN, PAD_Y, MU))
-    wrist.append(_vee_jaw("jawR", "jR", +1, REACH, OPEN, PAD_Y, MU))
+    jl, jr, njl, njr, tl, tr = names
+    wrist = next(b for b in root.iter("body") if b.get("name") == wrist_name)
+    wrist.append(_vee_jaw(jl, njl, -1, REACH, OPEN, PAD_Y, MU, tag=tl))
+    wrist.append(_vee_jaw(jr, njr, +1, REACH, OPEN, PAD_Y, MU, tag=tr))
+
+    # A real gripper's drive prevents the jaws meeting; the sim needs telling.
+    con = root.find("contact")
+    if con is None:
+        con = ET.SubElement(root, "contact")
+    ET.SubElement(con, "exclude", {"body1": jl, "body2": jr})
+
+    ET.SubElement(root.find("actuator"), "motor",
+                  {"name": act, "joint": njl, "ctrlrange": "-60 60", "gear": "1"})
+    ET.SubElement(root.find("equality"), "joint",
+                  {"name": f"couple_{act}", "joint1": njr, "joint2": njl,
+                   "polycoef": "0 -1 0 0 0", "solref": STIFF})
+    sens = root.find("sensor")
+    ET.SubElement(sens, "touch", {"name": sensors[0], "site": f"pad{tr}_s"})
+    ET.SubElement(sens, "jointpos", {"name": sensors[1], "joint": njl})
+
+
+def add_gripper(root):
+    """Bolt M4's jaws onto BOTH wrists of an already-built cell scene.
+
+    The cell is weld-free: `grasp_left` and `grasp_right` are both still
+    DECLARED — so the very same model file can be driven down the weld path as
+    an A/B control — but the gripper path activates neither. Each hand reports
+    its grasp from its own pad force sensor.
+
+    Converting the left hand is not symmetry for its own sake. The left tool is
+    45 mm of jaw plus 15 mm of pad longer than the bare wrist it replaces, and
+    the base part is 60 x 40 x 25 mm with an open pocket on top, so the jaws can
+    only take it across the 40 mm faces (60 mm exceeds the 41.61 mm tip gap the
+    jaws reach at their hard stop, which leaves 0.80 mm per side on 40 mm) with
+    the approach axis pointing straight down. That pins the left tool pose, and
+    with it pinned the left wrist and the right hand's pads overlap by 11.4 mm
+    at the best grasp available anywhere — the two hands cannot hold the base in
+    mid-air together, which is why the sequencer PLACES the base and inserts into
+    it standing on the table (see sequencer.run_cycle S2/S3).
+    """
+    from make_gripper_cell import WRIST
+
+    _mount_jaws(root, WRIST,
+                ("jawL", "jawR", "jL", "jR", "L", "R"),
+                "grip", ("grip_force", "jaw"))
+    _mount_jaws(root, LEFT_WRIST,
+                ("jawLl", "jawLr", "jLl", "jLr", "Ll", "Lr"),
+                "gripL", ("grip_force_L", "jaw_L"))
 
     # MuJoCo's default impratio=1 makes the friction constraint as soft as the
     # normal one, so a gripped part creeps along the pads even when the friction
@@ -168,21 +218,6 @@ def add_gripper(root):
         root.insert(0, opt)
     opt.set("impratio", "10")
     opt.set("cone", "elliptic")
-
-    # A real gripper's drive prevents the jaws meeting; the sim needs telling.
-    con = root.find("contact")
-    if con is None:
-        con = ET.SubElement(root, "contact")
-    ET.SubElement(con, "exclude", {"body1": "jawL", "body2": "jawR"})
-
-    ET.SubElement(root.find("actuator"), "motor",
-                  {"name": "grip", "joint": "jL", "ctrlrange": "-60 60", "gear": "1"})
-    ET.SubElement(root.find("equality"), "joint",
-                  {"name": "couple", "joint1": "jR", "joint2": "jL",
-                   "polycoef": "0 -1 0 0 0", "solref": STIFF})
-    sens = root.find("sensor")
-    ET.SubElement(sens, "touch", {"name": "grip_force", "site": "padR_s"})
-    ET.SubElement(sens, "jointpos", {"name": "jaw", "joint": "jL"})
     return root
 
 
@@ -214,7 +249,7 @@ def make(model_dir, round_bore=False, gripper=False, out=None):
         b = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, name)
         print(f"{name}: mass {m.body_mass[b]*1000:.0f} g, settled at {d.xpos[b].round(3)}")
     kind = "round chamfered bore" if round_bore else "square v1 pocket"
-    kind += ", right-wrist V-groove jaws" if gripper else ""
+    kind += ", V-groove jaws on both wrists" if gripper else ""
     print(f"wrote {out} ({kind}); NaN: {np.isnan(d.qpos).any()}")
     return out
 

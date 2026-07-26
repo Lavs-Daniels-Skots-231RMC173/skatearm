@@ -18,6 +18,16 @@ contact force instead of pushing until a threshold:
   drop (the wrist descends past ``drop_eps`` over ``drop_win`` cycles) the spiral
   **freezes** so the peg can seat, and if it then stalls without seating the spiral
   **resumes** — this is what recovers an offset the open-loop descent just jams on.
+- **Two seat criteria, because "seated" depends on what the part is standing in.**
+  The default one is travel: the peg is seated once the wrist has descended
+  ``seat_depth`` below first contact. That silently assumes the fixture *gives
+  way* — true when the other arm holds the part on a position servo, false when
+  the part is standing on a rigid table, where the peg bottoms out with only the
+  stack's few millimetres of compliance left and the travel never accumulates
+  even though the insert is complete (measured: full depth, latch never fired).
+  So ``seat_hold`` opts into the criterion a real force-controlled insert uses —
+  axial force held at ``f_target`` for ``seat_hold`` cycles while the wrist has
+  stopped moving. It is off by default; nothing that does not ask for it changes.
 - **Wrench abort** at ``w_abort`` as a safety backstop.
 
 The force source is the M1 wrist wrench (``ee_{side}_force`` rotated into world).
@@ -43,7 +53,7 @@ class Insertion:
                  f_contact=1.0, f_target=3.0, w_abort=9.0,
                  vz=3e-4, kf=2.2e-4, lead_cap=0.024,
                  r_max=6e-3, pitch=0.6e-3, search_rate=0.3,
-                 deep_gate=0.040, seat_depth=0.013,
+                 deep_gate=0.040, seat_depth=0.013, seat_hold=0, f_seat_frac=0.75,
                  drop_win=16, drop_eps=1.2e-3, dwell=22,
                  pause_max=70, still_win=40, still_tol=4e-4,
                  substeps=4, max_cycles=2600, hold_arms=None, on_step=None):
@@ -53,6 +63,8 @@ class Insertion:
         self.vz, self.kf, self.lead_cap = vz, kf, lead_cap
         self.r_max, self.pitch, self.search_rate = r_max, pitch, search_rate
         self.deep_gate, self.seat_depth = deep_gate, seat_depth
+        self.seat_hold = int(seat_hold)
+        self.f_seat_frac = float(f_seat_frac)
         self.drop_win, self.drop_eps, self.dwell = drop_win, drop_eps, dwell
         self.pause_max, self.still_win, self.still_tol = pause_max, still_win, still_tol
         self.substeps, self.max_cycles = substeps, max_cycles
@@ -126,7 +138,9 @@ class Insertion:
         pause_k = 0
         dwell_k = 0
         contact_z = None
+        seat_k = 0
         z_hist = deque(maxlen=max(self.drop_win, self.still_win) + 1)
+        f_hist = deque(maxlen=self.still_win)
         peak_w = 0.0
         aborted = False
         seated = False
@@ -147,7 +161,10 @@ class Insertion:
             if contact_z is None and f_ax > self.f_contact:
                 contact_z = z_act
                 z_hist.clear()
+                f_hist.clear()      # the seat test averages CONTACT force, not the
+                                    # free-fall zeros that precede it
             z_hist.append(z_act)
+            f_hist.append(f_ax)
 
             # axial admittance on the accumulating z-setpoint
             z_cmd += float(np.clip(self.kf * (f_ax - self.f_target), -self.vz, self.vz))
@@ -175,7 +192,14 @@ class Insertion:
                 # enough for the peg to seat if it is over the bore (the drop
                 # detector needs ~drop_win cycles of descent to fire) — otherwise
                 # the search sweeps the peg past the hole before it can drop in.
-                if not frozen:
+                # ...and never step it while seat evidence is accumulating. The
+                # search exists to FIND the bore; once the peg has stopped moving
+                # with the force sustained, it is already in one, and spiralling on
+                # a bottomed-out peg just grinds it across the pocket floor. If the
+                # evidence collapses (seat_k resets) the spiral picks up again.
+                # Measured: without this the peg seats at contact+~145 cycles having
+                # been walked 2.59 mm off centre by six spiral steps it did not need.
+                if not frozen and not seat_k:
                     dwell_k += 1
                     if dwell_k >= self.dwell:
                         dwell_k = 0
@@ -190,6 +214,30 @@ class Insertion:
             if contact_z is not None and (contact_z - float(arm.ee_pos()[2])) >= self.seat_depth:
                 seated = True
                 break
+            # seated (opt-in): the peg has stopped moving with the axial force held
+            # at f_target — the criterion that works when the fixture does NOT give
+            # way, so travel after contact never accumulates (part on a rigid table).
+            #
+            # The force test is on the MEAN over the stillness window, not on the
+            # instantaneous sample, because the admittance law above limit-cycles by
+            # construction: kf*(f_ax - f_target) saturates vz for any error over
+            # ~1.4 N, so the setpoint moves +-vz per cycle bang-bang and the force
+            # rings around the target instead of settling on it. Measured on the
+            # peg-into-base insertion, peg bottomed out on the pocket floor and not
+            # moving: f_ax swings 0.71..2.66 N about a 1.87 N mean against a 2.0 N
+            # target. An instantaneous ``f_ax >= f_target`` test resets the counter
+            # on every trough, so it never accumulates seat_hold in a row and a
+            # visibly seated peg reports seated=False -- which is what let the
+            # spiral search keep dragging it for another 2400 cycles.
+            if self.seat_hold and contact_z is not None:
+                still = (len(z_hist) > self.still_win
+                         and abs(z_hist[-self.still_win] - z_act) < self.still_tol)
+                pushing = (len(f_hist) == self.still_win
+                           and float(np.mean(f_hist)) >= self.f_seat_frac * self.f_target)
+                seat_k = seat_k + 1 if (pushing and still) else 0
+                if seat_k >= self.seat_hold:
+                    seated = True
+                    break
             if (z0 - z_act) >= self.deep_gate:   # ran past the working depth → give up
                 break
         return {"seated": bool(seated), "aborted": bool(aborted),
