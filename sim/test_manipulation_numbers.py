@@ -16,6 +16,8 @@ Regenerate the artefacts (needs the model) with::
     python sim/eval_gripper.py    --model .../skt_v3 --json sim/eval_data/gripper.json
     python sim/eval_wrench_backends.py --model .../skt_v3 \
         --json sim/eval_data/wrench_backends.json
+    MUJOCO_GL=egl python sim/eval_qc_occlusion.py --model .../skt_v3 \
+        --json sim/eval_data/qc_occlusion.json     # needs GL + the --gripper scene
     python sim/benchmark.py       --model .../skt_v3 --trials 5 --seed 0 \
         --json sim/benchmark_results.json
     python sim/demo_cell_cycle.py --model .../skt_v3 --no-render --log logs/cycle_001.json
@@ -26,8 +28,11 @@ contract as ``tools/skate_commander/examples/act_reach/test_eval_numbers.py``.
 
 Run: pytest -q sim/test_manipulation_numbers.py
 """
+import ast
+import glob
 import json
 import os
+import re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -202,6 +207,105 @@ def test_gripper_slip_curve():
         assert r["slip_payload_n"] > r["grasp_n"], r
 
 
+def test_qc_occlusion_pixel_counts_match_the_published_figures():
+    """MANIPULATION.md M4 / README / sim/README / ROADMAP / index.html:
+    inside the 300 px inspection ROI at 960x720, the weld path shows 1116 peg px
+    and 7581 pocket-rim px; the jaw path shows 0 and 827 -- 89 % of the rim gone."""
+    d = ed("qc_occlusion.json")
+    assert d["qc"]["render_px"] == [960, 720]     # "at its calibration resolution"
+    assert d["qc"]["roi_px"] == 300               # "the 300 px inspection ROI"
+
+    px = {k: v["px"] for k, v in d["paths"].items()}
+    assert (px["weld"]["top_peg"], px["weld"]["top_rim"]) == (1116, 7581)
+    assert (px["jaws"]["top_peg"], px["jaws"]["top_rim"]) == (0, 827)
+
+    # recompute the loss from the raw counts -- don't trust the summary field
+    loss = 100.0 * (1.0 - px["jaws"]["top_rim"] / px["weld"]["top_rim"])
+    assert round(loss, 1) == d["summary"]["top_rim_loss_pct"] == 89.1
+    assert round(loss) == 89, loss                # the "89 %" the docs print
+
+
+def test_qc_occlusion_rejects_a_unit_the_oracle_still_calls_good():
+    """index.html quotes 'ACCEPT on the sim oracle' beside the camera's REJECT,
+    and MANIPULATION.md's whole claim is that the conversion cost the SIGHT of
+    the part, not the assembly. So: the camera flips ACCEPT -> REJECT while the
+    oracle accepts BOTH paths on the same seated part.
+
+    Both verdicts are re-derived from qc.verdict's own thresholds (carried in
+    the artefact) rather than read out of the ``verdict`` field."""
+    d = ed("qc_occlusion.json")
+    t = d["qc"]["accept_thresholds"]
+    assert t == {"depth_min": 15.0, "align_max": 6.0, "tilt_max": 8.0}
+
+    def ok(depth, align, tilt):
+        return (depth is not None and depth >= t["depth_min"]
+                and align is not None and align <= t["align_max"]
+                and (tilt is None or tilt <= t["tilt_max"]))
+
+    w, j = d["paths"]["weld"], d["paths"]["jaws"]
+    assert (w["camera"]["verdict"], j["camera"]["verdict"]) == ("ACCEPT", "REJECT")
+
+    # the camera: the weld path sees a peg and clears both limits ...
+    assert w["camera"]["peg_present"] is True
+    assert ok(w["camera"]["depth_mm_est"], w["camera"]["align_err_mm"], None)
+    assert round(w["camera"]["align_err_mm"], 2) == 3.40      # "align 3.40 mm"
+    assert round(w["camera"]["depth_mm_est"], 2) == 19.02     # "depth 19.02 mm"
+    # ... and the jaw path fails at PRESENCE, which is what makes align None
+    assert j["camera"]["peg_present"] is False
+    assert j["camera"]["align_err_mm"] is None                # "align_err_mm None"
+
+    # the oracle: same seated part on both paths, accepted on both
+    assert w["oracle"]["depth_mm"] == j["oracle"]["depth_mm"] == 22.1209
+    for tag, p in (("weld", w), ("jaws", j)):
+        o = p["oracle"]
+        assert ok(o["depth_mm"], o["align_mm"], o["tilt_deg"]), (tag, o)
+    # the assembly the cameras disagree about is the M4 headline unit: 22.12 mm
+    # at 1.90 deg, alignment 1.24 mm -- MANIPULATION.md's "Final unit"
+    assert round(j["oracle"]["tilt_deg"], 2) == 1.90
+    assert round(j["oracle"]["align_mm"], 2) == 1.24
+
+
+def test_qc_occlusion_is_the_cell_and_not_the_measurement():
+    """MANIPULATION.md M4: 'Same probe, same qc.py, same masks, same renderer on
+    both paths, so the REJECT is caused by the conversion and not by the
+    measurement.' That sentence is only true if the two columns really do differ
+    in exactly one thing -- the cell -- so check the rest is held fixed."""
+    d = ed("qc_occlusion.json")
+    w, j = d["paths"]["weld"], d["paths"]["jaws"]
+
+    # one renderer config, one ROI, one set of masks, shared by both columns
+    assert d["qc"]["masks"]["top_peg"].startswith("qc._yellow")
+    assert d["qc"]["masks"]["top_rim"].startswith("qc._cyan")
+    # the frame the cell's own S5 judged, not a re-render staged for the doc
+    assert "not a re-render" in d["qc"]["measured_by"]
+
+    # the cells differ in the one way the claim is about, and only there
+    assert (w["scene"], j["scene"]) == ("skt_v3_cell.xml", "skt_v3_cell_gripper.xml")
+    assert (w["jaws_right"], w["jaws_left"]) == (False, False)
+    assert (j["jaws_right"], j["jaws_left"]) == (True, True)
+    assert w["mm_per_px"]["side"] == j["mm_per_px"]["side"]     # same camera geometry
+    assert abs(w["mm_per_px"]["top"] - j["mm_per_px"]["top"]) < 0.01
+
+    # the subject is NOT in exactly the same place -- two cells settle the part
+    # differently -- so bound it: 16 px of a 300 px window cannot take 1116 peg
+    # px to 0, which is the whole reason the offset is published rather than
+    # rounded away.
+    assert d["summary"]["unit_pose_delta_mm"] == 7.74
+    assert d["summary"]["unit_pose_delta_top_px"] == 16.0
+    assert d["summary"]["unit_pose_delta_top_px"] < 0.1 * d["qc"]["roi_px"]
+
+    # the weld column is the published reference cycle, independently re-run:
+    # MANIPULATION.md's "75.84 s against the weld path's 42.58 s"
+    assert round(w["cycle_time_s"], 2) == 42.58
+    assert round(w["cycle_time_s"], 1) == round(load("logs/cycle_001.json")[-1]["cycle_time_s"], 1)
+    # the jaws column runs LONGER than that published 75.84 s takt figure, and
+    # must: a camera REJECT sends S6 to the far reject bin, while the 75.84 s is
+    # the oracle-gated ACCEPT branch sim/test_cell_gripper.py runs with no
+    # renderer attached. Same cycle, different S6 branch -- which branch it takes
+    # is precisely what this eval measures.
+    assert j["cycle_time_s"] > 75.84
+
+
 # ------------------------------------------------------------------- benchmark
 
 def test_benchmark_report_covers_all_four_tasks():
@@ -275,6 +379,89 @@ def test_qc_residuals_match_the_published_1_6_and_3_4_mm():
                - qc["residual_align_mm"]) < 1e-3, qc
     assert abs(abs(qc["cam_depth_mm"] - qc["oracle_depth_mm"])
                - qc["residual_depth_mm"]) < 1e-3, qc
+
+
+# ------------------------------------------------------- the site's own counters
+
+def _site_counter(label):
+    """The figure docs/index.html prints beside ``label`` in its 'recomputed from
+    raw data' panel."""
+    with open(os.path.join(ROOT, "docs", "index.html"), encoding="utf-8") as f:
+        html = f.read()
+    m = re.search(r"<div><b>(\d+)</b><span>" + re.escape(label) + r"</span></div>", html)
+    assert m, f"docs/index.html no longer prints a '{label}' counter this test can read"
+    return int(m.group(1))
+
+
+def _this_file():
+    with open(os.path.join(HERE, "test_manipulation_numbers.py"), encoding="utf-8") as f:
+        return ast.parse(f.read())
+
+
+def _artefacts_read(tree):
+    """Every raw-data path this file pins a number to, taken from its own AST:
+    the literal argument of each ``load()`` / ``ed()`` call, repo-relative.
+
+    Literals only, and deliberately so -- a path assembled at runtime could not
+    be counted, so the assert below is what keeps the count honest rather than
+    approximate. It also means no helper in this file may call ``load()`` or
+    ``ed()`` with a variable."""
+    out = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in ("load", "ed"):
+            arg = n.args[0]
+            assert isinstance(arg, ast.Constant), \
+                "artefact paths must stay string literals so they can be counted"
+            out.add(arg.value if n.func.id == "load"
+                    else "sim/eval_data/" + arg.value)
+    return out
+
+
+def test_site_counters_are_derived_and_not_typed():
+    """docs/index.html prints 'N checks in CI' and 'M raw data files' under the
+    headline 'Every number above is recomputed from raw data, on every push.'
+
+    Those two are themselves published figures, and they had drifted -- which is
+    the exact failure the panel claims cannot happen. So they get the same
+    treatment as everything else on the page: counted here, off this file's own
+    AST, rather than typed. Add a pin or an artefact without updating the panel
+    and CI goes red."""
+    tree = _this_file()
+    tests = [n.name for n in tree.body
+             if isinstance(n, ast.FunctionDef) and n.name.startswith("test_")]
+    data = _artefacts_read(tree)
+
+    assert _site_counter("checks in CI") == len(tests), \
+        f"docs/index.html says {_site_counter('checks in CI')} checks; this file has {len(tests)}"
+    assert _site_counter("raw data files") == len(data), \
+        f"docs/index.html says {_site_counter('raw data files')} data files; " \
+        f"this file reads {len(data)}: {sorted(data)}"
+    # the third counter is the promise the other two are making
+    assert _site_counter("hand-typed stats") == 0
+
+
+def test_every_committed_artefact_is_actually_pinned():
+    """The counter above is only meaningful if 'raw data files' means every
+    artefact in the tree, not just the ones someone remembered to pin. An eval
+    that writes a committed JSON nothing re-derives is a number with no guard --
+    so committing one without a pin fails here."""
+    read = _artefacts_read(_this_file())
+    pinned = {p for p in read if p.startswith("sim/eval_data/")}
+    on_disk = {"sim/eval_data/" + os.path.basename(p)
+               for p in glob.glob(os.path.join(ED, "*.json"))}
+    assert on_disk == pinned, (
+        f"unpinned artefacts: {sorted(on_disk - pinned)}; "
+        f"pinned but missing: {sorted(pinned - on_disk)}")
+
+    # And every path counted -- the eval artefacts plus the benchmark report and
+    # the two cycle logs -- must in fact resolve and parse as the JSON it claims
+    # to be, so a counted path can never be one that no longer exists. Opened
+    # directly rather than through load()/ed(): a variable argument here would
+    # trip the literal check in _artefacts_read, which is the check doing the
+    # counting.
+    for rel in sorted(read):
+        with open(os.path.join(ROOT, *rel.split("/")), encoding="utf-8") as f:
+            assert isinstance(json.load(f), (dict, list)), rel
 
 
 if __name__ == "__main__":

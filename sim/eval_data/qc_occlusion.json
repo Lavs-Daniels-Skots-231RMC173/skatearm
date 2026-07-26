@@ -1,0 +1,112 @@
+{
+  "eval": "qc_occlusion",
+  "milestone": "M4",
+  "source": "sim/eval_qc_occlusion.py",
+  "qc": {
+    "render_px": [
+      960,
+      720
+    ],
+    "roi_px": 300,
+    "accept_thresholds": {
+      "depth_min": 15.0,
+      "align_max": 6.0,
+      "tilt_max": 8.0
+    },
+    "masks": {
+      "top_peg": "qc._yellow(top) & ROI \u2014 strict lit peg-top yellow",
+      "top_rim": "qc._cyan(top) & ROI \u2014 pocket block, incl. the rim ring",
+      "side_stub_band": "qc._peg_colors(side) & stub band \u2014 broad yellow|orange in the 70 rows above the block's top edge, the pixels depth_mm_est comes from",
+      "side_rim": "qc._cyan(side) & ROI"
+    },
+    "measured_by": "sequencer S5 \u2014 qc.measure() masks, not a re-render"
+  },
+  "paths": {
+    "weld": {
+      "scene": "skt_v3_cell.xml",
+      "jaws_right": false,
+      "jaws_left": false,
+      "px": {
+        "top_peg": 1116,
+        "top_rim": 7581,
+        "side_stub_band": 3742,
+        "side_rim": 12581
+      },
+      "camera": {
+        "peg_present": true,
+        "align_err_mm": 3.4042,
+        "depth_mm_est": 19.0237,
+        "verdict": "ACCEPT"
+      },
+      "oracle": {
+        "depth_mm": 22.1209,
+        "align_mm": 0.7799,
+        "tilt_deg": 1.8856
+      },
+      "mm_per_px": {
+        "top": 0.48308,
+        "side": 0.30607
+      },
+      "unit_at_qc_m": [
+        -0.00311,
+        0.4115,
+        0.12195
+      ],
+      "cycle_time_s": 42.584
+    },
+    "jaws": {
+      "scene": "skt_v3_cell_gripper.xml",
+      "jaws_right": true,
+      "jaws_left": true,
+      "px": {
+        "top_peg": 0,
+        "top_rim": 827,
+        "side_stub_band": 2472,
+        "side_rim": 13705
+      },
+      "camera": {
+        "peg_present": false,
+        "align_err_mm": null,
+        "depth_mm_est": 26.0633,
+        "verdict": "REJECT"
+      },
+      "oracle": {
+        "depth_mm": 22.1209,
+        "align_mm": 1.2368,
+        "tilt_deg": 1.9023
+      },
+      "mm_per_px": {
+        "top": 0.4822,
+        "side": 0.30607
+      },
+      "unit_at_qc_m": [
+        0.00459,
+        0.41158,
+        0.12277
+      ],
+      "cycle_time_s": 82.224
+    }
+  },
+  "summary": {
+    "top_peg_px": {
+      "weld": 1116,
+      "jaws": 0
+    },
+    "top_rim_px": {
+      "weld": 7581,
+      "jaws": 827
+    },
+    "top_rim_loss_pct": 89.1,
+    "verdict": {
+      "weld": "ACCEPT",
+      "jaws": "REJECT"
+    },
+    "unit_pose_delta_mm": 7.74,
+    "unit_pose_delta_xyz_mm": [
+      7.7,
+      0.08,
+      0.82
+    ],
+    "unit_pose_delta_top_px": 16.0
+  }
+}

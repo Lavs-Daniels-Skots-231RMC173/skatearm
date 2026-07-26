@@ -498,8 +498,8 @@
         <h3 style="font:700 24px var(--sans);letter-spacing:-.01em;">Every number above is recomputed from raw data, on every push.</h3>
         <p style="color:var(--fg2);margin-top:12px;max-width:520px;">Each sweep writes its trials to a committed JSON file, and a test re-derives every published figure from those files &mdash; the misalignment curve, the stiffness sweep, the slip curve, the cycle time. It runs in the hardware-free CI job with no MuJoCo and no GPU, so prose and data cannot drift apart silently: change a number in the text without changing the measurement and the build goes red.</p>
         <div class="nums" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:18px;max-width:520px;">
-          <div><b>13</b><span>checks in CI</span></div>
-          <div><b>7</b><span>raw data files</span></div>
+          <div><b>20</b><span>checks in CI</span></div>
+          <div><b>9</b><span>raw data files</span></div>
           <div><b>0</b><span>hand-typed stats</span></div>
         </div>
         <div class="ctas" style="margin-top:22px;">
@@ -510,11 +510,15 @@
     <div class="cell reveal">
       <div>
         <h3 style="font:700 24px var(--sans);letter-spacing:-.01em;">The last weld, removed &mdash; and what it turned out to be holding.</h3>
-        <p style="color:var(--fg2);margin-top:12px;max-width:520px;">Taking the weld off the second hand is not a re-skin of the same cycle. A weld holds the base in mid-air for free while the peg goes in; jaws have to <b>pick it off the table, set it down, let go, and pick the finished unit back up</b> &mdash; four real grip/release operations on the left hand and two on the right, each one reported by a pad force sensor, with both weld constraints sampled three times across the cycle and never once engaged. That is where the extra 33&nbsp;s goes: the takt bound moves 60&nbsp;s &rarr; 85&nbsp;s, and the test writes down which step spent each second of it rather than letting the bound absorb it unexplained.</p>
+        <p style="color:var(--fg2);margin-top:12px;max-width:520px;">Taking the weld off the second hand is not a re-skin of the same cycle. A weld holds the base in mid-air for free while the peg goes in; jaws have to <b>pick it off the table, set it down, let go, and pick the finished unit back up</b> &mdash; four real grip/release operations on the left hand and two on the right, each one reported by a pad force sensor, with both weld constraints sampled three times across the cycle and never once engaged. That is where the extra 33&nbsp;s goes: the takt bound moves 60&nbsp;s &rarr; 85&nbsp;s, and the test writes down which step spent each second of it rather than letting the bound absorb it unexplained. <span style="color:var(--faint)">In simulation, and on an <b>opt-in scene</b>: the default cell keeps its welds and is byte-identical, so every other demo, log and benchmark on this page still reproduces exactly as it did before.</span></p>
         <div class="nums" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:18px;max-width:520px;">
           <div><b>22.1 mm</b><span>insert at 2.98 N</span></div>
           <div><b>0.43 mm</b><span>re-grip drift</span></div>
           <div><b>75.8 s</b><span>cycle (takt &le; 85 s)</span></div>
+        </div>
+        <div class="ctas" style="margin-top:22px;">
+          <a class="btn ghost" href="https://github.com/dsl-robotics/skatearm/blob/main/sim/test_cell_gripper.py" target="_blank" rel="noopener">See the weld-free cycle test</a>
+          <a class="btn ghost" href="https://github.com/dsl-robotics/skatearm/blob/main/sim/sequencer.py" target="_blank" rel="noopener">The sequencer it runs</a>
         </div>
       </div>
       <div class="frame"><div class="bar"><i></i><i></i><i></i><span class="tag">weld-free cell &middot; S3 align &rarr; S4 insert</span></div><video autoplay loop muted playsinline preload="none" poster="img/cell_cycle_gripper_poster.webp" aria-label="The weld-free work cell aligning and inserting the peg with both hands on actuated jaws"><source src="img/cell_gripper_demo.mp4" type="video/mp4"></video></div>
@@ -526,11 +530,15 @@
       </div>
       <div>
         <h3 style="font:700 24px var(--sans);letter-spacing:-.01em;">It cost the camera gate. That is worth more than hiding it.</h3>
-        <p style="color:var(--fg2);margin-top:12px;max-width:520px;">With jaws on both wrists the left tool must approach top-down &mdash; the pocket faces up and the part is longer than the jaws open, so the orientation is forced &mdash; which parks the wrist between the overhead camera and the unit at exactly the pose inspection looks at. In the same 300&nbsp;px window, unchanged pipeline: the weld path sees <b>1116</b> peg pixels and <b>ACCEPT</b>s; the weld-free path sees <b>zero</b>, with 89&nbsp;% of the pocket rim gone, and <b>REJECT</b>s. Same probe on both, so the cell changed and not the measurement. <span style="color:var(--faint)">So the weld-free cycle is gated by the sim oracle and says so in its own event stream, and the published camera-QC numbers stay on the weld path where they were earned. A camera gate here needs inspection optics aimed at the assembly station &mdash; a second camera pair, not a re-calibration.</span></p>
+        <p style="color:var(--fg2);margin-top:12px;max-width:520px;">With jaws on both wrists the left tool must approach top-down &mdash; the pocket faces up and the part is longer than the jaws open, so the orientation is forced &mdash; which parks the wrist between the overhead camera and the unit at exactly the pose inspection looks at. In the same 300&nbsp;px window, unchanged pipeline: the weld path sees <b>1116</b> peg pixels and <b>ACCEPT</b>s; the weld-free path sees <b>zero</b>, with 89&nbsp;% of the pocket rim gone, and <b>REJECT</b>s. Same probe on both, so the cell changed and not the measurement &mdash; and the two cells settle the part 7.7&nbsp;mm apart, 16&nbsp;px of that 300&nbsp;px window, published next to the counts so you can rule that out yourself instead of taking &ldquo;same probe&rdquo; on trust. The pose oracle accepts the unit on <b>both</b> paths: what the conversion cost is the sight of the part, not the assembly. <span style="color:var(--faint)">So the weld-free cycle is gated by the sim oracle and says so in its own event stream, and the published camera-QC numbers stay on the weld path where they were earned. A camera gate here needs inspection optics aimed at the assembly station &mdash; a second camera pair, not a re-calibration.</span></p>
         <div class="nums" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:18px;max-width:520px;">
           <div><b>1116 &rarr; 0</b><span>peg px in window</span></div>
           <div><b>&minus;89 %</b><span>pocket rim seen</span></div>
           <div><b>ACCEPT</b><span>on the sim oracle</span></div>
+        </div>
+        <div class="ctas" style="margin-top:22px;">
+          <a class="btn ghost" href="https://github.com/dsl-robotics/skatearm/blob/main/sim/eval_qc_occlusion.py" target="_blank" rel="noopener">See the eval that measures it</a>
+          <a class="btn ghost" href="https://github.com/dsl-robotics/skatearm/blob/main/sim/eval_data/qc_occlusion.json" target="_blank" rel="noopener">Raw pixel counts (JSON)</a>
         </div>
       </div>
     </div>
