@@ -30,6 +30,7 @@ Run: pytest -q sim/test_manipulation_numbers.py
 """
 import ast
 import glob
+import html
 import json
 import math
 import os
@@ -58,6 +59,118 @@ def rows_by_offset(node):
     return {r["offset_mm"]: r for r in node}
 
 
+# ------------------------------------------- reading the documents themselves
+#
+# A published figure is guarded when a test reads it OUT OF the document that
+# publishes it. Loading the artefact and comparing it against a number typed
+# into this file catches the DATA drifting -- but it names the document in a
+# docstring, and a docstring is a comment, not a check: edit the page and this
+# file still passes. That is how docs/index.html came to promise "every number
+# above is recomputed from raw data" while most of the numbers above it were
+# pinned only by prose in here.
+#
+# So the helpers below read the sentence, and the tests pin the sentence. Each
+# one takes the document's own relative path, which is also the only honest
+# place to write it down.
+
+IDX = "docs/index.html"          # the landing page -- it makes the promise above
+RM = "README.md"
+SRM = "sim/README.md"
+RMAP = "docs/ROADMAP.md"
+MAN = "docs/MANIPULATION.md"
+
+_TYPO = ((" ", " "), (" ", " "), (" ", " "),   # the three spaces
+         ("—", "--"), ("–", "-"), ("−", "-"), ("‑", "-"),
+         ("→", "->"), ("≤", "<="), ("≥", ">="),
+         ("±", "+-"), ("×", "x"), ("°", " deg"))
+
+
+def _src(rel):
+    """A committed source file, as text.
+
+    Deliberately not ``load()``/``ed()``: those two names are what
+    ``_artefacts_read`` counts as raw data, and a .py file is not raw data."""
+    with open(os.path.join(ROOT, *rel.split("/")), encoding="utf-8") as f:
+        return f.read()
+
+
+def _prose(rel):
+    """A document's text, flattened down to the sentence it publishes.
+
+    Three things are flattened away, because none of them is part of the claim:
+
+    * **Wrapping.** Newlines, indentation and a comment's leading '#' all become
+      one space, so the patterns below read like the sentences they pin instead
+      of encoding the column each sentence happened to wrap at.
+    * **Markup.** In an .html file the script and style blocks go, the tags come
+      out and the entities go back in, so ``<b>&plusmn;1.6&nbsp;mm</b>`` reads as
+      the ``+-1.6 mm`` a visitor sees. A figure is published by the page, not by
+      the element it happens to sit in.
+    * **Typography.** The em dash, the times sign, the degree sign and their
+      friends fold to an ASCII spelling everywhere, so ONE pattern pins a figure
+      written ``&plusmn;1.6&nbsp;mm`` on the landing page, ``±1.6 mm`` in the
+      README and ``+-1.6 mm`` in a docstring.
+
+    Re-flowing a comment, bolding a number or swapping a hyphen for an en dash
+    must not turn a guarded figure into an unguarded one."""
+    txt = re.sub(r"[ \t]*\n[ \t]*#?[ \t]*", " ", _src(rel))
+    if rel.endswith(".html"):
+        txt = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", txt)
+        txt = html.unescape(re.sub(r"<[^>]+>", " ", txt))
+    for uni, plain in _TYPO:
+        txt = txt.replace(uni, plain)
+    if rel.endswith(".html"):
+        txt = re.sub(r"[ \t]+", " ", txt)     # tags left gaps where they stood
+    return txt
+
+
+def _quoted(rel, pattern):
+    """The figure a document prints at ``pattern``, as it prints it.
+
+    The assert is half the value: delete the sentence and the pin fails loudly
+    instead of quietly having nothing left to check."""
+    m = re.search(pattern, _prose(rel))
+    assert m, f"{rel} no longer states the figure this test reads: {pattern}"
+    return m.group(1)
+
+
+def _states(rel, pattern, derived):
+    """Assert a document quotes ``derived`` at ``pattern``, to the precision it
+    chose to print it at: '17.4' has to be the derivation rounded to a tenth,
+    '0.80' to a hundredth. The unit is whatever the sentence says -- mm, seconds,
+    newtons, pixels, per cent -- and never enters the comparison.
+
+    The bound is inclusive and carries a float-noise epsilon, so a figure landing
+    exactly on a rounding tie -- 0.805 mm, which this repo prints as 0.80 -- is
+    accepted rather than decided by a coin toss."""
+    txt = _quoted(rel, pattern)
+    dp = len(txt.split(".")[1]) if "." in txt else 0
+    assert abs(derived - float(txt)) <= 0.5 * 10 ** -dp + 1e-9, \
+        f"{rel} states {txt} where the data gives {derived:.4f}"
+    return float(txt)
+
+
+def _bound(rel, pattern, worst):
+    """A tolerance a document publishes, checked in BOTH directions.
+
+    Reading a bound off the page and asserting ``measured <= bound`` is only half
+    a check: every assert downstream of it still passes if the page widens its own
+    claim, which is exactly how '0.05 N' becomes '0.5 N' without CI noticing. So a
+    published bound must also be TIGHT -- within one decimal order of the worst
+    measurement it covers. A page may round 0.01 up to a clean 0.05; it may not
+    round it up to a different claim.
+
+    The floor is the page's own printed resolution, so a measurement that lands on
+    zero does not collapse the upper limit to zero with it."""
+    txt = _quoted(rel, pattern)
+    bound = float(txt)
+    dp = len(txt.split(".")[1]) if "." in txt else 0
+    assert worst <= bound, f"{rel} publishes a bound of {txt} the data breaks at {worst:.4f}"
+    assert bound < 10 * max(worst, 0.5 * 10 ** -dp), \
+        f"{rel} publishes {txt}, an order looser than the {worst:.4f} actually measured"
+    return bound
+
+
 # --------------------------------------------------------------------------- M1
 
 def test_wrench_backend_sensor_is_exact_at_both_poses():
@@ -66,13 +179,23 @@ def test_wrench_backend_sensor_is_exact_at_both_poses():
     Checked per row, not as an average: delta must be exactly -F."""
     d = ed("wrench_backends.json")
     assert d["loads_n"] == [[0, 0, -10], [10, 0, 0], [0, 8, 0], [5, -5, -5]]
+    worst = 0.0
     for pose in ("home", "working"):
         for arm, a in d["poses"][pose]["arms"].items():
             assert a["sensor_err_max_n"] == 0.0, (pose, arm)
+            worst = max(worst, a["sensor_err_max_n"])
             for r in a["rows"]:
                 assert r["sensor_delta_n"] == [-v for v in r["load_n"]], (pose, arm, r)
             # untared: the no-load reading is the hand's own weight, ~0.4 N
             assert round(a["baseline_sensor_n"][2], 1) == 0.4, (pose, arm)
+
+    # The bound the landing page advertises is not a figure of its own: it is the
+    # threshold sim/test_ft_sensor.py asserts. Read it out of that assert, so the
+    # page cannot claim a tighter bound than the test enforces -- nor a looser one.
+    bound = float(_quoted("sim/test_ft_sensor.py", r"assert err < ([\d.]+), f\"\{site\}"))
+    assert worst < bound, (worst, bound)
+    _states(IDX, r"known static load to < ?([\d.]+) N", bound)
+    _states(IDX, r"< ?([\d.]+) N wrist wrench error", bound)
 
 
 def test_wrench_backend_estimate_is_the_weaker_fallback():
@@ -121,11 +244,20 @@ def test_insertion_misalignment_curve():
     assert (s[8]["seated"], s[8]["trials"]) == (3, 6)
 
     n = rows_by_offset(d["modes"]["no-search"])
+    open_loop = max(r["seated"] for r in n.values())
     for off, r in n.items():
         assert r["seated"] <= 1, ("no-search jams almost everywhere", off, r)
     # and the search variant must beat the open-loop baseline at every offset
     for off in d["offsets_mm"]:
         assert s[off]["seated"] >= n[off]["seated"], off
+
+    # the landing page's version of that curve, read off the page
+    _states(IDX, r"Misalignment tolerance (\d+)/6 at 2 and 4 mm", s[2]["seated"])
+    _states(IDX, r"tolerance \d+/(\d+) at 2 and 4 mm", d["dirs_per_offset"])
+    _states(IDX, r"(\d+)/6 at 6 mm", s[6]["seated"])
+    _states(IDX, r"(\d+)/6 at 8 mm", s[8]["seated"])
+    _states(IDX, r"open-loop descent manages <= (\d+)/6", open_loop)
+    _states(IDX, r"(\d+)/6 seated at 2-4 mm off", s[4]["seated"])
 
 
 def test_insertion_peak_force_regulated():
@@ -135,7 +267,13 @@ def test_insertion_peak_force_regulated():
     far = [s[o]["peak_wrench_max_n"] for o in (6, 8)]
     assert min(near) >= 3.3 and max(near) <= 3.6, near
     assert max(far) <= 4.6, far
-    assert max(near + far) < 9.0                             # never near the abort
+
+    # the abort threshold is the controller's own constant, not a figure to type
+    abort = float(_quoted("sim/insertion.py", r"w_abort=([\d.]+)"))
+    assert max(near + far) < abort                           # never near the abort
+    _states(IDX, r"against a ([\d.]+) N abort", abort)
+    _states(IDX, r"Peak axial force stays ([\d.]+)-", min(near + far))
+    _states(IDX, r"Peak axial force stays [\d.]+-([\d.]+) N", max(near + far))
 
 
 def test_insertion_theta_tolerance():
@@ -143,11 +281,18 @@ def test_insertion_theta_tolerance():
     d = ed("insertion_theta.json")
     rows = d["theta_sweep"]
     assert [r["theta_cmd_deg"] for r in rows] == [0, 3, 6, 9, 12]
+
+    # the page states the tolerance as "levelled to under N deg" -- so N is the
+    # bound the sweep has to clear, read off the page rather than typed here, and
+    # required to be tight: 20 deg would also "cover" a 1.8 deg residual
     for r in rows:
         assert r["seated"] == r["trials"], r                 # every trial seats
-        assert r["tilt_final_max_deg"] < 2.0, r              # levelled to <2 deg
+    level = _bound(IDX, r"peg tilt is levelled to under ([\d.]+) deg",
+                   max(r["tilt_final_max_deg"] for r in rows))
+    assert all(r["tilt_final_max_deg"] < level for r in rows), rows
     injected = max(r["tilt_injected_deg"] for r in rows)
     assert 9.0 <= injected < 10.0, injected                  # "up to ~9 deg"
+    _states(IDX, r"a ([\d.]+) deg peg tilt is levelled", injected)
 
 
 # --------------------------------------------------------------------------- M3
@@ -161,8 +306,20 @@ def test_admittance_stiffness_curve():
     assert {r["k_n_per_m"]: r["yield_mm"] for r in c["k_sweep"]} == want
     for r in c["k_sweep"]:
         assert r["yield_mm"] == r["f_over_k_mm"], r          # e settles to F/K
-        assert r["e_times_k_n"] == 8.0, r                    # "e*K = 8.0 N at every point"
+        assert r["e_times_k_n"] == c["wrench_n"], r          # "e*K = 8.0 N at every point"
         assert abs(r["after_release_mm"]) <= 0.2, r          # returns to ~0 on release
+
+    _states(IDX, r"Over a (\d+)x stiffness sweep", c["k_ratio"])
+    _states(IDX, r"(\d+)x stiffness, e = F/K", c["k_ratio"])
+    _states(IDX, r"exactly -- [\d/.]+ mm under ([\d.]+) N", c["wrench_n"])
+    # the page prints the whole curve as one slash-separated list, so pin it as
+    # one: same order, same count, each entry at the precision it was printed at.
+    quoted = _quoted(IDX, r"exactly -- ([\d/.]+) mm under [\d.]+ N").split("/")
+    yields = [r["yield_mm"] for r in c["k_sweep"]]
+    assert len(quoted) == len(yields), (quoted, yields)
+    for txt, y in zip(quoted, yields):
+        dp = len(txt.split(".")[1]) if "." in txt else 0
+        assert abs(y - float(txt)) <= 0.5 * 10 ** -dp + 1e-9, (txt, y)
 
 
 def test_admittance_per_axis():
@@ -192,13 +349,23 @@ def test_gripper_force_tracking_and_friction_hold():
     assert d["targets_n"] == [2.0, 3.0, 4.0, 5.0]
     rows = d["hold"]
     assert [r["target_n"] for r in rows] == d["targets_n"]
+
+    # the page states the band and the tracking tolerance; both come off the page.
+    # The tolerance goes through _bound(), because "within 0.05 N" is a claim about
+    # precision: an assert that only checks the data fits inside it would wave a
+    # widened 0.5 N straight through.
+    errs = []
     for r in rows:
-        assert abs(r["measured_n"] - r["target_n"]) <= 0.05, r    # tracks the target
         assert r["held"] is True, r                               # friction alone, no weld
         assert -3.5 <= r["part_dz_mm"] <= -2.5, r                 # "dz ~ -3 mm"
-        assert abs(r["hold_force_n"] - r["target_n"]) <= 0.05, r  # grasp persists
+        errs.append(abs(r["measured_n"] - r["target_n"]))         # tracks the target
+        errs.append(abs(r["hold_force_n"] - r["target_n"]))       # grasp persists
+    _bound(IDX, r"N tracked to within ([\d.]+) N", max(errs))
     meas = [r["measured_n"] for r in rows]
     assert meas == sorted(meas), meas                             # monotone
+
+    _states(IDX, r"([\d.]+)-[\d.]+ N tracked to within [\d.]+ N", min(d["targets_n"]))
+    _states(IDX, r"[\d.]+-([\d.]+) N tracked to within [\d.]+ N", max(d["targets_n"]))
 
 
 def test_gripper_slip_curve():
@@ -210,6 +377,12 @@ def test_gripper_slip_curve():
     assert payloads == sorted(payloads)      # a firmer grasp holds a larger payload
     for r in rows:
         assert r["slip_payload_n"] > r["grasp_n"], r
+
+    # the landing page publishes the firmest grasp and what it carried
+    firmest = max(got)
+    _states(IDX, r"a ([\d.]+) N grasp carries [\d.]+ N before it lets go", firmest)
+    _states(IDX, r"a [\d.]+ N grasp carries ([\d.]+) N before it lets go", got[firmest])
+    _states(IDX, r"([\d.]+) N held before slip", got[firmest])
 
 
 def test_qc_occlusion_pixel_counts_match_the_published_figures():
@@ -228,6 +401,20 @@ def test_qc_occlusion_pixel_counts_match_the_published_figures():
     loss = 100.0 * (1.0 - px["jaws"]["top_rim"] / px["weld"]["top_rim"])
     assert round(loss, 1) == d["summary"]["top_rim_loss_pct"] == 89.1
     assert round(loss) == 89, loss                # the "89 %" the docs print
+
+    # and now the documents themselves, each read out of its own text
+    _states(IDX, r"In the same (\d+) px window", d["qc"]["roi_px"])
+    _states(IDX, r"the weld path sees (\d+) peg pixels", px["weld"]["top_peg"])
+    _states(IDX, r"(\d+) -> 0 peg px in window", px["weld"]["top_peg"])
+    _states(IDX, r"with (\d+) % of the pocket rim gone", loss)
+    _states(IDX, r"-(\d+) % pocket rim seen", loss)
+    _states(SRM, r"inside the (\d+) px inspection ROI", d["qc"]["roi_px"])
+    _states(SRM, r"the weld path gives (\d+) peg px", px["weld"]["top_peg"])
+    _states(SRM, r"the weld path gives \d+ peg px / (\d+) rim px", px["weld"]["top_rim"])
+    _states(SRM, r"the jaw path gives \*\*0 peg px / (\d+) rim px\*\*", px["jaws"]["top_rim"])
+    _states(SRM, r"\((\d+) % of the rim gone\)", loss)
+    _states(RMAP, r"against (\d+) on the weld path", px["weld"]["top_peg"])
+    _states(MAN, r"(\d+) peg px", px["weld"]["top_peg"])
 
 
 def test_qc_occlusion_rejects_a_unit_the_oracle_still_calls_good():
@@ -269,6 +456,24 @@ def test_qc_occlusion_rejects_a_unit_the_oracle_still_calls_good():
     assert round(j["oracle"]["tilt_deg"], 2) == 1.90
     assert round(j["oracle"]["align_mm"], 2) == 1.24
 
+    # the pages that publish that unit, read out of themselves
+    depth = j["oracle"]["depth_mm"]
+    _states(IDX, r"S4 inserts to ([\d.]+) mm", depth)
+    _states(SRM, r"inserts to ([\d.]+) mm at", depth)
+    _states(SRM, r"ACCEPT at ([\d.]+) mm /", depth)
+    _states(SRM, r"ACCEPT at [\d.]+ mm / ([\d.]+) deg", j["oracle"]["tilt_deg"])
+    _states(SRM, r"ACCEPT at [\d.]+ mm / [\d.]+ deg / ([\d.]+) mm on the oracle",
+            j["oracle"]["align_mm"])
+    _states(RMAP, r"insert to ([\d.]+) mm", depth)
+    # the landing page's word, not just its number. It prints that verdict in the
+    # grid that reports the jaw path's "1116 -> 0 peg px", so it is the ORACLE's
+    # reading of the very unit the camera rejected -- re-derived from ok(), not
+    # copied out of a field.
+    o = j["oracle"]
+    page = _quoted(IDX, r"(ACCEPT|REJECT) on the sim oracle")
+    assert page == ("ACCEPT" if ok(o["depth_mm"], o["align_mm"], o["tilt_deg"])
+                    else "REJECT"), (page, o)
+
 
 def test_qc_occlusion_is_the_cell_and_not_the_measurement():
     """MANIPULATION.md M4: 'Same probe, same qc.py, same masks, same renderer on
@@ -295,20 +500,38 @@ def test_qc_occlusion_is_the_cell_and_not_the_measurement():
     # differently -- so bound it: 16 px of a 300 px window cannot take 1116 peg
     # px to 0, which is the whole reason the offset is published rather than
     # rounded away.
-    assert d["summary"]["unit_pose_delta_mm"] == 7.74
-    assert d["summary"]["unit_pose_delta_top_px"] == 16.0
-    assert d["summary"]["unit_pose_delta_top_px"] < 0.1 * d["qc"]["roi_px"]
+    delta_mm, delta_px = (d["summary"]["unit_pose_delta_mm"],
+                          d["summary"]["unit_pose_delta_top_px"])
+    assert delta_mm == 7.74
+    assert delta_px == 16.0
+    assert delta_px < 0.1 * d["qc"]["roi_px"]
+    _states(IDX, r"settle the part ([\d.]+) mm apart", delta_mm)
+    m = re.search(r"(\d+) px of that (\d+) px window", _prose(IDX))
+    assert m, "docs/index.html no longer states the pose offset in px"
+    assert (float(m.group(1)), float(m.group(2))) == (delta_px, d["qc"]["roi_px"]), m.groups()
 
     # the weld column is the published reference cycle, independently re-run:
     # MANIPULATION.md's "75.84 s against the weld path's 42.58 s"
     assert round(w["cycle_time_s"], 2) == 42.58
     assert round(w["cycle_time_s"], 1) == round(load("logs/cycle_001.json")[-1]["cycle_time_s"], 1)
-    # the jaws column runs LONGER than that published 75.84 s takt figure, and
-    # must: a camera REJECT sends S6 to the far reject bin, while the 75.84 s is
-    # the oracle-gated ACCEPT branch sim/test_cell_gripper.py runs with no
-    # renderer attached. Same cycle, different S6 branch -- which branch it takes
-    # is precisely what this eval measures.
-    assert j["cycle_time_s"] > 75.84
+    _states(MAN, r"against the weld path's ([\d.]+) s", w["cycle_time_s"])
+
+    # The jaw-path comparison figure, 75.84 s, is the one number in this file with
+    # NO committed artefact behind it: it comes from sim/test_cell_gripper.py,
+    # which needs MuJoCo and so cannot run in the hardware-free job. It can still
+    # be kept CONSISTENT, which is the drift that actually happens -- so take
+    # MANIPULATION.md's 2 dp as the published value, make every rounder copy agree
+    # with it, and use it as the bound below instead of a literal typed in here.
+    gripper_s = float(_quoted(MAN, r"([\d.]+) s against the weld path's"))
+    _states(IDX, r"-- ([\d.]+) s against the weld path's", gripper_s)
+    _states(SRM, r"\*\*([\d.]+) s\*\* against the weld path's", gripper_s)
+    _states(RMAP, r"([\d.]+) s against the weld path's", gripper_s)
+
+    # the jaws column runs LONGER than that published figure, and must: a camera
+    # REJECT sends S6 to the far reject bin, while the 75.84 s is the oracle-gated
+    # ACCEPT branch sim/test_cell_gripper.py runs with no renderer attached. Same
+    # cycle, different S6 branch -- which branch it takes is what this eval measures.
+    assert j["cycle_time_s"] > gripper_s, (j["cycle_time_s"], gripper_s)
 
 
 # ------------------------------------------------------------------- benchmark
@@ -336,6 +559,9 @@ def test_benchmark_numbers_match_sim_readme_table():
     assert round(ins["depth_mm"]["mean"], 1) == 18.7
     assert (ins["peg_tilt_deg"]["min"], ins["peg_tilt_deg"]["max"]) == (1.2, 1.4)
     assert all(not t["aborted"] for t in b["insert"]["trials"])          # "no tau-abort"
+    _states(SRM, r"depth ([\d.]+) mm \(target 18\)", ins["depth_mm"]["mean"])
+    _states(SRM, r"peg tilt ([\d.]+)-[\d.]+ deg", ins["peg_tilt_deg"]["min"])
+    _states(SRM, r"peg tilt [\d.]+-([\d.]+) deg", ins["peg_tilt_deg"]["max"])
 
     m2 = b["insert_m2"]["summary"]                            # "23.7 mm, 0.7-0.9, 4.7-4.9 N"
     assert round(m2["peg_rel_z_mm"]["mean"], 1) == 23.7
@@ -350,11 +576,33 @@ def test_benchmark_numbers_match_sim_readme_table():
 # ----------------------------------------------------------------- cycle logs
 
 def test_cycle_time_matches_the_published_42_6_s():
-    """README / sim/README / ROADMAP / index.html all quote 42.6 s against a 60 s takt."""
+    """Every document that quotes the reference cycle is read here, out of itself.
+
+    42.6 s is the single most-copied figure in the repo -- the landing page says
+    it twice, and four more documents repeat it. Naming them in a docstring is
+    what let them drift; naming them in ``_states`` is what stops it. The takt
+    bound is read off the page too, so 'inside the takt target' means inside the
+    target the page publishes rather than one typed in here."""
     log = load("logs/cycle_001.json")
     t = log[-1]["cycle_time_s"]
     assert round(t, 1) == 42.6, t
-    assert t < 60.0                                           # inside the takt target
+
+    _states(IDX, r"([\d.]+) s cycle \(takt <= 60 s\)", t)
+    _states(IDX, r"against the weld path's ([\d.]+) s", t)
+    _states(RM, r"Cycle time \| \*\*([\d.]+) s\*\* \(takt target <= 60 s\)", t)
+    _states(SRM, r"Reference cycle: ([\d.]+) s", t)
+    _states(SRM, r"against the weld path's ([\d.]+) s", t)
+    _states(RMAP, r"full cycle ([\d.]+) s <= 60 s takt", t)
+    _states(RMAP, r"against the weld path's ([\d.]+) s", t)
+    _states(MAN, r"published ([\d.]+) s reference cycle", t)
+    _states(MAN, r"against the weld path's ([\d.]+) s", t)     # to 2 dp there
+
+    # the page publishes TWO takt bounds -- 60 s beside this cycle and 85 s beside
+    # the gripper cell's 75.8 s -- so the bound is addressed through the cycle it
+    # bounds, not by position: an anchorless pattern would take whichever panel the
+    # page happens to print first, and quietly change meaning if they were swapped.
+    takt = float(_quoted(IDX, r"%s s cycle \(takt <= (\d+) s\)" % re.escape("%.1f" % t)))
+    assert t < takt, (t, takt)                                # inside the published takt
 
 
 def test_cycle_runs_the_m2_force_regulated_insert():
@@ -371,60 +619,35 @@ def test_cycle_runs_the_m2_force_regulated_insert():
 
 
 def test_qc_residuals_match_the_published_1_6_and_3_4_mm():
-    """README / sim/README / ROADMAP / index.html quote align +-1.6 mm, depth +-3.4 mm."""
+    """The +-1.6 mm / +-3.4 mm QC residual pair, read out of all four documents
+    that print it.
+
+    The landing page writes them ``&plusmn;1.6&nbsp;mm``, the READMEs write them
+    ``±1.6 mm`` and this docstring writes them ``+-1.6 mm``. ``_prose`` folds all
+    three to the same ASCII, so one pattern per site is enough."""
     log = load("logs/cycle_002_camera_qc.json")
     qc = [e for e in log if "residual_align_mm" in e]
     assert len(qc) == 1, "the camera-QC cycle log must carry exactly one verify record"
     qc = qc[0]
-    assert round(qc["residual_align_mm"], 1) == 1.6, qc["residual_align_mm"]
-    assert round(qc["residual_depth_mm"], 1) == 3.4, qc["residual_depth_mm"]
+    align, depth = qc["residual_align_mm"], qc["residual_depth_mm"]
+    assert round(align, 1) == 1.6, align
+    assert round(depth, 1) == 3.4, depth
     # the residual is |camera - oracle| on each axis — recompute it, don't trust the field.
     # 1e-3 tolerance: the log rounds each term to 4 dp *after* the residual is taken.
-    assert abs(abs(qc["cam_align_mm"] - qc["oracle_align_mm"])
-               - qc["residual_align_mm"]) < 1e-3, qc
-    assert abs(abs(qc["cam_depth_mm"] - qc["oracle_depth_mm"])
-               - qc["residual_depth_mm"]) < 1e-3, qc
+    assert abs(abs(qc["cam_align_mm"] - qc["oracle_align_mm"]) - align) < 1e-3, qc
+    assert abs(abs(qc["cam_depth_mm"] - qc["oracle_depth_mm"]) - depth) < 1e-3, qc
+
+    _states(IDX, r"\+-([\d.]+) mm QC alignment", align)
+    _states(IDX, r"\+-([\d.]+) mm insert depth", depth)
+    _states(RM, r"alignment \(camera vs sim oracle\) \| \+-([\d.]+) mm", align)
+    _states(RM, r"QC residual, insertion depth \| \+-([\d.]+) mm", depth)
+    _states(SRM, r"alignment \+-([\d.]+) mm", align)
+    _states(SRM, r"alignment \+-[\d.]+ mm, depth \+-([\d.]+) mm", depth)
+    _states(RMAP, r"residuals align \+-([\d.]+) mm", align)
+    _states(RMAP, r"residuals align \+-[\d.]+ mm / depth \+-([\d.]+) mm", depth)
 
 
 # --------------------------------------------------------------- M4 jaw geometry
-
-def _src(rel):
-    """A committed source file, as text.
-
-    Deliberately not ``load()``/``ed()``: those two names are what
-    ``_artefacts_read`` counts as raw data, and a .py file is not raw data."""
-    with open(os.path.join(ROOT, *rel.split("/")), encoding="utf-8") as f:
-        return f.read()
-
-
-def _prose(rel):
-    """A source file's text with wrapped lines rejoined -- newlines, indentation
-    and a comment's leading '#' all become one space -- so the patterns below
-    read like the sentences they pin instead of encoding the column each
-    sentence happened to wrap at. Re-flowing a comment must not turn a guarded
-    figure into an unguarded one."""
-    return re.sub(r"[ \t]*\n[ \t]*#?[ \t]*", " ", _src(rel))
-
-
-def _quoted(rel, pattern):
-    """The figure a source file prints at ``pattern``, as it prints it."""
-    m = re.search(pattern, _prose(rel))
-    assert m, f"{rel} no longer states the figure this test reads: {pattern}"
-    return m.group(1)
-
-
-def _states(rel, pattern, derived):
-    """Assert a source file quotes ``derived`` at ``pattern``, to the precision it
-    chose to print it at: '17.4' has to be the derivation rounded to a tenth,
-    '0.80' to a hundredth. The bound is inclusive and carries a float-noise
-    epsilon, so a figure landing exactly on a rounding tie -- 0.805 mm, which
-    this repo prints as 0.80 -- is accepted rather than decided by a coin toss."""
-    txt = _quoted(rel, pattern)
-    dp = len(txt.split(".")[1]) if "." in txt else 0
-    assert abs(derived - float(txt)) <= 0.5 * 10 ** -dp + 1e-9, \
-        f"{rel} says {txt} mm where the geometry gives {derived:.4f} mm"
-    return float(txt)
-
 
 def _figure_quotes(fig):
     """Which files in the tree print ``fig``, and how many times each.
@@ -659,10 +882,13 @@ def _quoted_peg(mcs):
 
 def _site_counter(label):
     """The figure docs/index.html prints beside ``label`` in its 'recomputed from
-    raw data' panel."""
-    with open(os.path.join(ROOT, "docs", "index.html"), encoding="utf-8") as f:
-        html = f.read()
-    m = re.search(r"<div><b>(\d+)</b><span>" + re.escape(label) + r"</span></div>", html)
+    raw data' panel.
+
+    The raw markup, deliberately, not ``_prose()``: this one reads the counter
+    out of the ``<div><b>N</b><span>`` element it lives in, so it has to see the
+    tags the other pins strip away."""
+    txt = _src("docs/index.html")
+    m = re.search(r"<div><b>(\d+)</b><span>" + re.escape(label) + r"</span></div>", txt)
     assert m, f"docs/index.html no longer prints a '{label}' counter this test can read"
     return int(m.group(1))
 
