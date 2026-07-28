@@ -31,12 +31,17 @@ Run: pytest -q sim/test_manipulation_numbers.py
 import ast
 import glob
 import json
+import math
 import os
 import re
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 ED = os.path.join(HERE, "eval_data")
+
+if HERE not in sys.path:                  # the jaw-geometry guard below builds a
+    sys.path.insert(0, HERE)              # jaw out of the scene builder itself
 
 
 def load(path):
@@ -379,6 +384,224 @@ def test_qc_residuals_match_the_published_1_6_and_3_4_mm():
                - qc["residual_align_mm"]) < 1e-3, qc
     assert abs(abs(qc["cam_depth_mm"] - qc["oracle_depth_mm"])
                - qc["residual_depth_mm"]) < 1e-3, qc
+
+
+# --------------------------------------------------------------- M4 jaw geometry
+
+def _src(rel):
+    """A committed source file, as text.
+
+    Deliberately not ``load()``/``ed()``: those two names are what
+    ``_artefacts_read`` counts as raw data, and a .py file is not raw data."""
+    with open(os.path.join(ROOT, *rel.split("/")), encoding="utf-8") as f:
+        return f.read()
+
+
+def _prose(rel):
+    """A source file's text with wrapped lines rejoined -- newlines, indentation
+    and a comment's leading '#' all become one space -- so the patterns below
+    read like the sentences they pin instead of encoding the column each
+    sentence happened to wrap at. Re-flowing a comment must not turn a guarded
+    figure into an unguarded one."""
+    return re.sub(r"[ \t]*\n[ \t]*#?[ \t]*", " ", _src(rel))
+
+
+def _quoted(rel, pattern):
+    """The figure a source file prints at ``pattern``, as it prints it."""
+    m = re.search(pattern, _prose(rel))
+    assert m, f"{rel} no longer states the figure this test reads: {pattern}"
+    return m.group(1)
+
+
+def _states(rel, pattern, derived):
+    """Assert a source file quotes ``derived`` at ``pattern``, to the precision it
+    chose to print it at: '17.4' has to be the derivation rounded to a tenth,
+    '0.80' to a hundredth. The bound is inclusive and carries a float-noise
+    epsilon, so a figure landing exactly on a rounding tie -- 0.805 mm, which
+    this repo prints as 0.80 -- is accepted rather than decided by a coin toss."""
+    txt = _quoted(rel, pattern)
+    dp = len(txt.split(".")[1]) if "." in txt else 0
+    assert abs(derived - float(txt)) <= 0.5 * 10 ** -dp + 1e-9, \
+        f"{rel} says {txt} mm where the geometry gives {derived:.4f} mm"
+    return float(txt)
+
+
+def _const(rel, name):
+    """A module-level constant, off the file's AST -- sim/sequencer.py imports
+    mujoco and numpy, so the hardware-free job cannot import it."""
+    for n in ast.parse(_src(rel)).body:
+        if isinstance(n, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == name for t in n.targets):
+            return ast.literal_eval(n.value)
+    raise AssertionError(f"{rel} no longer defines {name}")
+
+
+def _xml_boxes(block):
+    """Every box geom of a body given as an MJCF snippet, as (pos, half-size)."""
+    import xml.etree.ElementTree as ET
+    out = []
+    for g in ET.fromstring(block.strip()).findall("geom"):
+        pos = [float(v) for v in (g.get("pos") or "0 0 0").split()]
+        out.append((pos, [float(v) for v in g.get("size").split()]))
+    return out
+
+
+def _vee_jaw_corners(sign):
+    """Every corner of one V-groove jaw's two pad plates, in the wrist's frame,
+    taken from the geoms sim/make_cell_scene.py actually emits -- pos, size and
+    the 45 deg euler, applied -- and not re-typed from the constants behind them.
+
+    Also returns the jaw body's rest offset along the closing axis and its slide
+    range, which with the corners is everything the jaw figures are made of."""
+    import make_cell_scene as mcs
+    import make_gripper_cell as mgc
+
+    jaw = mcs._vee_jaw("jaw", "j", sign, mgc.REACH, mgc.OPEN, mgc.PAD_Y, mgc.MU,
+                       tag="X")
+    x0 = float(jaw.get("pos").split()[0])
+    lo, hi = (float(v) for v in jaw.find("joint").get("range").split())
+    pts = []
+    for g in jaw.findall("geom"):
+        hx, hy, hz = (float(v) for v in g.get("size").split())
+        px, py, pz = (float(v) for v in g.get("pos").split())
+        th = float(g.get("euler").split()[1])            # rotation about local y
+        c, s = math.cos(th), math.sin(th)
+        for a in (1, -1):
+            for b in (1, -1):
+                for e in (1, -1):
+                    pts.append((x0 + px + a * hx * c + e * hz * s,
+                                py + b * hy,
+                                pz - a * hx * s + e * hz * c))
+    return pts, x0, lo, hi
+
+
+def test_jaw_geometry_matches_the_prose_that_states_it():
+    """M4's jaw numbers are the one published family with no artefact behind
+    them: they are pure geometry, so the geometry itself is the guard.
+
+    Every figure below is rebuilt from the geoms sim/make_cell_scene.py emits and
+    checked against the sentence quoting it, in the file quoting it. Change a pad
+    size, the V's 45 deg, OPEN or the slide range and the prose in
+    make_cell_scene.py, sequencer.py and the spec's DECISION 4 silently stops
+    being true -- the same drift the rest of this file exists to catch, applied
+    to the one family that predates it. It had already drifted: sequencer.py
+    quoted a 42.7 mm geometric tip gap this construction never produces."""
+    CELL, SEQ = "sim/make_cell_scene.py", "sim/sequencer.py"
+    SPEC = "specs/demo_task_spec.md"     # DECISION 4's annotation quotes them too
+    EPS = 2e-6      # the builder prints pos and euler to 6 dp, so a micron is the
+    import make_cell_scene as mcs                    # resolution of the geometry
+    left, x0, lo, hi = _vee_jaw_corners(-1)
+    right, x0r, lo_r, hi_r = _vee_jaw_corners(+1)
+
+    # the right jaw is the left one mirrored in x, so one jaw's numbers are both
+    assert abs(x0 + x0r) < 1e-12 and (lo, hi) == (-hi_r, -lo_r)
+    assert abs(max(p[0] for p in left) + min(p[0] for p in right)) < 1e-12
+    assert abs(x0 + lo) > abs(x0 + hi), "lo is meant to be the opening end"
+
+    # THE VERTEX. The V's inside corner sits exactly on the jaw body's origin,
+    # and every distance below is measured from it, so it is pinned first.
+    off = min(abs(p[0] - x0) + abs(p[2]) for p in left)
+    assert off < EPS, f"the V's vertex left the jaw origin by {off * 1e3:.4f} mm"
+
+    # THE TIPS. The plate corners furthest along the closing axis: they are the
+    # contact lines, one either side of the pad centre, and every gap below is
+    # measured between THEM -- not between the plate centres, which is the wrong
+    # line and flatters the grasp window by ~3.5 mm a side.
+    xmax = max(p[0] for p in left)
+    tips = [p for p in left if abs(p[0] - xmax) < EPS]
+    tip_x, tip_z = xmax - x0, max(abs(p[2]) for p in tips)
+    assert abs(min(p[2] for p in tips) + tip_z) < EPS      # one either side of 0
+    assert abs(tip_x - tip_z) < EPS, (tip_x, tip_z)       # 45 deg: equal in both
+    _states(SEQ, r"sit \+-([\d.]+) mm either side", tip_z * 1e3)
+    _states(SPEC, r"([\d.]+) mm from pad centre", tip_z * 1e3)
+
+    # TRAVEL. Rest gap, where the two plates would meet, where a D20 peg seats.
+    rest = 2.0 * (abs(x0) - tip_x)
+    _states(CELL, r"tip gap at rest is ([\d.]+) mm", rest * 1e3)
+    _states(SEQ, r"tip gap at rest is ([\d.]+) mm", rest * 1e3)
+    _states(SPEC, r"([\d.]+) mm tip gap at rest", rest * 1e3)
+    _states(SEQ, r"plate tips are ([\d.]+) mm apart at rest", rest * 1e3)
+    _states(CELL, r"colliding with each other at ([\d.]+) mm", rest * 0.5e3)
+    r_peg = float(_quoted_peg(mcs))
+    assert round(2e3 * r_peg) == 20, "the peg stopped being a D20"
+    _states(CELL, r"seats a D20 peg at ([\d.]+) mm",
+            (abs(x0) - r_peg * math.sqrt(2)) * 1e3)     # 90 deg V, tangent on 4 lines
+    stop_in = _states(CELL, r"hard stop at \+([\d.]+) mm", hi * 1e3)
+    assert stop_in < rest * 0.5e3, \
+        f"the +{stop_in} mm stop is past the {rest * 0.5e3:.2f} mm the plates meet at"
+
+    # THE GAP. Geometry gives one number and the model measures another, wider
+    # one, because the range end is soft-limited rather than rigid. The prose has
+    # to carry both, and the arithmetic between them.
+    geom_gap = 2e3 * (abs(x0 + lo) - tip_x)
+    _states(SEQ, r"the geometry alone gives ([\d.]+) mm", geom_gap)
+    over = float(_quoted(SEQ, r"parks the jaw ([\d.]+) mm past it"))
+    extra = float(_quoted(SEQ, r"The extra ([\d.]+) mm is the stop"))
+    assert abs(extra - 2 * over) < 1e-12, (extra, over)   # one overshoot per jaw
+    gap = None
+    for rel, pat in ((SEQ, r"tip gap is ([\d.]+) mm MEASURED"),
+                     (SEQ, r"\(([\d.]+) mm of tip gap across a"),
+                     (CELL, r"the ([\d.]+) mm tip gap the"),
+                     (SPEC, r"([\d.]+) mm at the stop")):
+        stated = _states(rel, pat, geom_gap + extra)
+        assert gap in (None, stated), f"{rel} quotes the gap as {stated} mm " \
+                                      f"where the rest of the repo says {gap} mm"
+        gap = stated                 # everything downstream follows from the
+                                     # PUBLISHED gap, as the prose's own arithmetic
+                                     # does; the line above is what ties it to the
+                                     # geometry and to the measured overshoot.
+
+    # THE PART, off the cell scene's own base body rather than from the prose.
+    boxes = _xml_boxes(mcs.SQUARE_BASE)
+    span = [(min(p[i] - s[i] for p, s in boxes), max(p[i] + s[i] for p, s in boxes))
+            for i in range(3)]
+    dims = [round(1e3 * (b - a)) for a, b in span]
+    m = re.search(r"base part is (\d+) x (\d+) x (\d+) mm", _prose(CELL))
+    assert m and [int(v) for v in m.groups()] == dims, (m and m.groups(), dims)
+    length, face = float(dims[0]), float(dims[1])
+
+    # what the gap means for the 40 mm face the jaws are forced onto
+    _states(CELL, r"only take it across the ([\d.]+) mm faces", face)
+    _states(SEQ, r"Across a ([\d.]+) mm base", face)
+    _states(SEQ, r"across a ([\d.]+) mm part", face)
+    for rel, pat in ((CELL, r"leaves ([\d.]+) mm per side on 40 mm"),
+                     (SEQ, r"that is ([\d.]+) mm per side"),
+                     (SEQ, r"with ([\d.]+) mm per side at their hard stop")):
+        _states(rel, pat, 0.5 * (gap - face))
+    assert length > gap, "the base's length would fit between the jaws after all"
+    _states(SEQ, r"with ([\d.]+) mm of clearance per side",
+            0.5 * (gap - 2e3 * r_peg))
+
+    # WHERE ALONG THE LENGTH the jaws may bite: both tips on the wall.
+    window = 0.5 * length - tip_z * 1e3
+    _states(SEQ, r"only for \|dx\| <= ([\d.]+) mm", window)
+    dx = abs(_const(SEQ, "LGRIP_DX")) * 1e3
+    assert dx < window, f"LGRIP_DX = -{dx} mm puts a tip off the {window:.2f} mm wall"
+    _states(SEQ, r"([\d.]+) mm of tip margin", window - dx)
+
+    # HOW HIGH. LGRIP_REL is a choice between two geometric bounds, not a guess:
+    # the pad has to cover the whole side wall and still clear the table.
+    pad_h = 1e3 * (max(p[1] for p in left) - min(p[1] for p in left))
+    _states(SEQ, r"pads are ([\d.]+) mm tall", pad_h)
+    floor_top = 1e3 * min(p[2] + s[2] for p, s in boxes)      # the pocket's floor
+    wall_top = 1e3 * span[2][1]
+    _states(SEQ, r"side wall they clamp is ([\d.]+) mm \(z", wall_top - floor_top)
+    m = re.search(r"\(z (\d+)\.\.(\d+) above the bottom\)", _prose(SEQ))
+    assert m and [float(v) for v in m.groups()] == [floor_top, wall_top]
+    lo_c = max(pad_h / 2, wall_top - pad_h / 2)     # clear the table / reach the top
+    hi_c = floor_top + pad_h / 2                    # reach the bottom of the wall
+    m = re.search(r"any centre in (\d+)\.\.(\d+) mm engages", _prose(SEQ))
+    assert m and [float(v) for v in m.groups()] == [lo_c, hi_c], (m.groups(), lo_c, hi_c)
+    rel_h = 1e3 * _const(SEQ, "LGRIP_REL")
+    assert lo_c <= rel_h <= hi_c, (rel_h, lo_c, hi_c)
+    _states(SEQ, r"leaves the pad ([\d.]+) mm clear of the table", rel_h - pad_h / 2)
+
+
+def _quoted_peg(mcs):
+    """The D20 peg's radius, out of the cell scene's own peg body."""
+    m = re.search(r'name="peg_body"[^>]*size="([\d.]+)', mcs.PEG)
+    assert m, "sim/make_cell_scene.py no longer emits a peg_body cylinder"
+    return m.group(1)
 
 
 # ------------------------------------------------------- the site's own counters

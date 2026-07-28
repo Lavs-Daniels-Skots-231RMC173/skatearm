@@ -78,11 +78,13 @@ R_DOWN = np.array([[1.0, 0.0, 0.0],   # tool-down wrist orientation for the jaws
 # its 60 x 40 footprint is the table; the closing axis (local x) then has to
 # take the part across its 40 mm faces, because 60 mm exceeds the jaws' tip gap;
 # which leaves the V-groove running along the base's 60 mm length.
-# That tip gap is 41.61 mm MEASURED, not the 42.7 mm the geometry note derived:
-# the jaw's slide range ends at -12 mm and GRIP_OPEN parks it at -12.12 mm, hard
-# against a soft-limited stop, so 41.61 mm is the mechanical maximum and no
-# larger GRIP_OPEN buys any more. Across a 40.0 mm base that is 0.80 mm per side,
-# which is what forces the align-then-descend approach in centre_pads.
+# That tip gap is 41.61 mm MEASURED, and the geometry alone gives 41.37 mm: the
+# plate tips are 17.37 mm apart at rest and the jaw's slide range ends at -12 mm.
+# The extra 0.24 mm is the stop being soft-limited rather than rigid -- GRIP_OPEN
+# parks the jaw 0.12 mm past it, on each of the two -- so 41.61 mm is the
+# mechanical maximum and no larger GRIP_OPEN buys any more. Across a 40.0 mm base
+# that is 0.80 mm per side, which is what forces the align-then-descend approach
+# in centre_pads.
 R_DOWN_L = np.array([[0.0, 0.0, 1.0],
                      [-1.0, 0.0, 0.0],
                      [0.0, -1.0, 0.0]])

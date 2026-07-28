@@ -92,3 +92,14 @@ drawing — links to the metrology/engineering-drawing portfolio projects.
 2. ✅ PETG print v1, one aluminium CNC pair later — approved 11.06.2026.
 3. ✅ Takt target ≤ 60 s (stretch 30 s) — approved 11.06.2026.
 4. ⏳ Gripper jaw geometry vs Ø20 peg — **open**, to verify when the robot arrives; sim proceeds without a detailed gripper model until then.
+   - *Annotated 28.07.2026, decision still open.* The second clause stopped
+     being true at M4: the sim now carries a detailed gripper — a 90° V-groove
+     parallel jaw on both wrists, its pads tangent to the Ø20 peg so the peg
+     self-centres on four line contacts (`sim/make_cell_scene.py::_vee_jaw`).
+     Every figure that geometry publishes — 17.4 mm tip gap at rest, 41.61 mm
+     at the stop, ±11.3 mm from pad centre to the contact lines — is rebuilt
+     from the emitted geoms on every push, by
+     `sim/test_manipulation_numbers.py::test_jaw_geometry_matches_the_prose_that_states_it`.
+     The DECISION itself does not move: whether these jaws hold the part at the
+     H9/d9 fit is a measurement on the real arm, not a sim result, and the
+     jaw dimensions are still a guess at what the delivered gripper will be.
