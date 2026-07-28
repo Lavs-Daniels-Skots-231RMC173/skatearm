@@ -59,13 +59,25 @@ def test_command_reaches_robot_and_telemetry_comes_back():
     assert pkt_id == COMMAND_ID and dm == (1, 1, 1)
     assert np.allclose(t, targ)
 
-    # robot -> client: telemetry decodes through the vendored classes
+    # robot -> client: telemetry decodes through the vendored classes. Sent the
+    # way the endpoint sends it -- every telemetry object in sim_endpoint goes
+    # out through pack_datagrams -- rather than hand-rolled raw. This state_est
+    # pickles to 1605 B, and a raw datagram that big does not survive WSL2
+    # mirrored-networking loopback: measured there, 127.0.0.1 delivers payloads
+    # up to 1472 B (= 1500 B Ethernet MTU - 20 IP - 8 UDP) and silently drops
+    # everything above, despite lo advertising mtu 65536. That is the same
+    # behaviour pack_datagrams exists to absorb, so the test has no business
+    # bypassing it. For the small motor_state pack_datagrams is a no-op that
+    # returns the identical bytes -- test_small_packet_is_single_unchanged_
+    # datagram pins that -- so the wire here is unchanged from before.
     ms = SCD.motor_state()
     ms.motor_pos = names.vector_to_can_dict(np.linspace(0, 1, 26))
-    robot.sendto(pickle.dumps((1, ms)), client_addr)
+    for d in pack_datagrams(1, ms, 0):
+        robot.sendto(d, client_addr)
     se = SCD.state_est()
     se.dof_pos = names.vector_to_can_dict(np.linspace(1, 2, 26))
-    robot.sendto(pickle.dumps((2, se)), client_addr)
+    for d in pack_datagrams(2, se, 1):
+        robot.sendto(d, client_addr)
 
     deadline = time.time() + 1.0
     while time.time() < deadline and link.state.state_estimates is None:

@@ -79,8 +79,19 @@ def _attach(ep):
     """A client whose heartbeat has been seen, so telemetry will be sent."""
     link = SkateLink("127.0.0.1", ep.port)
     link.poll()                    # first poll heartbeats
-    assert ep.pump_network() >= 1, "endpoint never saw the client heartbeat"
-    return link
+    # The heartbeat is WAITED for, not assumed to be there already. Both sockets
+    # are non-blocking, and on native loopback sendto() queues the datagram on
+    # the receiving socket inside the sending syscall, so a single drain on the
+    # next line finds it. Under WSL2 mirrored networking it detours through the
+    # Windows stack and takes ~0.2-1 ms to become readable (measured: 0/30 ready
+    # immediately, 30/30 within 1.1 ms). Nothing is dropped -- a zero-wait drain
+    # simply looks too early -- so the deadline is what makes this portable.
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        if ep.pump_network() >= 1:
+            return link
+        time.sleep(0.002)
+    raise AssertionError("endpoint never saw the client heartbeat")
 
 
 def _settle(mujoco, ep, nmax=6000, tol=1e-5):
