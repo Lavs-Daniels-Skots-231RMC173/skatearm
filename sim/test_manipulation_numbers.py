@@ -78,6 +78,8 @@ RM = "README.md"
 SRM = "sim/README.md"
 RMAP = "docs/ROADMAP.md"
 MAN = "docs/MANIPULATION.md"
+PRE = "dashboard/preview_overview.html"      # the baked cockpit demo, chips and all
+GUARD = "sim/test_manipulation_numbers.py"   # this file: the checker, not a publisher
 
 _TYPO = ((" ", " "), (" ", " "), (" ", " "),   # the three spaces
          ("—", "--"), ("–", "-"), ("−", "-"), ("‑", "-"),
@@ -92,6 +94,9 @@ def _src(rel):
     ``_artefacts_read`` counts as raw data, and a .py file is not raw data."""
     with open(os.path.join(ROOT, *rel.split("/")), encoding="utf-8") as f:
         return f.read()
+
+
+_PROSE = {}
 
 
 def _prose(rel):
@@ -112,7 +117,12 @@ def _prose(rel):
       README and ``+-1.6 mm`` in a docstring.
 
     Re-flowing a comment, bolding a number or swapping a hyphen for an en dash
-    must not turn a guarded figure into an unguarded one."""
+    must not turn a guarded figure into an unguarded one.
+
+    Cached, because ``_figure_quotes`` below reads every file in the tree once
+    per figure and the fold it applies is the same fold every time."""
+    if rel in _PROSE:
+        return _PROSE[rel]
     txt = re.sub(r"[ \t]*\n[ \t]*#?[ \t]*", " ", _src(rel))
     if rel.endswith(".html"):
         txt = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", txt)
@@ -121,6 +131,7 @@ def _prose(rel):
         txt = txt.replace(uni, plain)
     if rel.endswith(".html"):
         txt = re.sub(r"[ \t]+", " ", txt)     # tags left gaps where they stood
+    _PROSE[rel] = txt
     return txt
 
 
@@ -169,6 +180,86 @@ def _bound(rel, pattern, worst):
     assert bound < 10 * max(worst, 0.5 * 10 ** -dp), \
         f"{rel} publishes {txt}, an order looser than the {worst:.4f} actually measured"
     return bound
+
+
+def _figure_quotes(fig, unit, aka=()):
+    """Which committed files PRINT ``fig unit``, and how many times each.
+
+    A pin proves the document it names still agrees with the data. It says
+    nothing about the document nobody pinned -- and the unpinned copy is exactly
+    the one that goes stale, because nothing fails when it does. So the pins get
+    censused against the tree, and a copy the census finds but the pins do not
+    account for is a failure.
+
+    Read through ``_prose``, so ``**1116** peg px`` in markdown and
+    ``1116&nbsp;peg&nbsp;px`` on the page are the same quotation. Carried WITH
+    its unit, because the numeral alone cannot tell the README's 4.6 cm of ACT
+    reach error from its 4.6 N of insertion force, nor 17.4 cm of arm from
+    17.4 mm of lift. The separator is one-or-more, so a stylesheet's
+    ``padding:16px`` is not a published pixel count.
+
+    This file is skipped: it is the checker, not a publisher, and its docstrings
+    quote most of the repo's figures by design.
+
+    ``aka`` names sentences where the same numeral is a DIFFERENT quantity --
+    sequencer.py's 1.6 mm release height is not the QC camera's 1.6 mm residual
+    -- and each exemption must still find its sentence, so an exemption cannot
+    outlive the prose that earned it."""
+    pat = re.compile(r"(?<![\d.])" + re.escape(fig) + r"(?![\d])[\s*]+"
+                     + unit + r"(?!\w)")
+    skip = {}
+    for rel, sentence in aka:
+        spans = [(m.start(), m.end()) for m in re.finditer(sentence, _prose(rel))]
+        assert spans, f"{rel} no longer carries the sentence this exemption names: {sentence}"
+        skip.setdefault(rel, []).extend(spans)
+    out = {}
+    for base, dirs, names in os.walk(ROOT):
+        dirs[:] = [d for d in dirs if d not in (".git", "__pycache__")]
+        for name in names:
+            if name.rsplit(".", 1)[-1] not in ("py", "md", "html", "txt", "yml"):
+                continue
+            rel = os.path.relpath(os.path.join(base, name), ROOT).replace(os.sep, "/")
+            if rel == GUARD:
+                continue
+            hits = sum(1 for m in pat.finditer(_prose(rel))
+                       if not any(s <= m.start() and m.end() <= e
+                                  for s, e in skip.get(rel, ())))
+            if hits:
+                out[rel] = hits
+    return out
+
+
+def _published(derived, unit, quotes, aka=()):
+    """Pin every sentence that publishes a figure -- and prove there is no other.
+
+    ``quotes`` is the (document, pattern) list that publishes ``derived``. Each
+    pair is checked against the derivation by ``_states``, at whatever precision
+    that sentence chose. Then the pins are turned around and used as a census:
+    what the tree prints has to be exactly what the pins cover.
+
+    Documents print the same quantity at the precision their sentence needs --
+    42.6 s on the landing page, 42.58 s where the comparison is to a hundredth --
+    so the pins are grouped by the text each one actually printed, and each group
+    is censused for that text. Every group is still checked against the SAME
+    derivation, which is what keeps the documents agreeing with each other.
+
+    Two consequences worth stating, because they are what makes this stricter
+    than the ``_states`` calls it wraps. ``re.search`` reads the FIRST match, so
+    a document printing the same sentence twice was only ever half pinned; the
+    census counts both, so the second copy needs a pattern anchored to it. And
+    two patterns that land on the SAME sentence count as two pins against one
+    quotation, which fails -- a pin has to name a copy of its own."""
+    want = {}
+    for rel, pat in quotes:
+        _states(rel, pat, derived)
+        table = want.setdefault(_quoted(rel, pat), {})
+        table[rel] = table.get(rel, 0) + 1
+    for txt, table in sorted(want.items()):
+        got = _figure_quotes(txt, unit, aka)
+        assert got == table, \
+            f"'{txt} {unit}' is printed {got} and pinned {table} -- an unpinned " \
+            f"copy of a published figure is how 42.7 mm survived"
+    return want
 
 
 # --------------------------------------------------------------------------- M1
@@ -273,7 +364,13 @@ def test_insertion_peak_force_regulated():
     assert max(near + far) < abort                           # never near the abort
     _states(IDX, r"against a ([\d.]+) N abort", abort)
     _states(IDX, r"Peak axial force stays ([\d.]+)-", min(near + far))
-    _states(IDX, r"Peak axial force stays [\d.]+-([\d.]+) N", max(near + far))
+    # the page writes the top of that range as a range end; README.md and
+    # MANIPULATION.md write it as a ceiling, "<=4.6 N". Same measured maximum
+    # either way, so all three are the same census key.
+    _published(max(near + far), "N", (
+        (IDX, r"Peak axial force stays [\d.]+-([\d.]+) N"),
+        (RM, r"peak force <=([\d.]+) N \(abort 9\)"),
+        (MAN, r"and <=([\d.]+) N at the 6-8 mm extremes")))
 
 
 def test_insertion_theta_tolerance():
@@ -292,7 +389,12 @@ def test_insertion_theta_tolerance():
     assert all(r["tilt_final_max_deg"] < level for r in rows), rows
     injected = max(r["tilt_injected_deg"] for r in rows)
     assert 9.0 <= injected < 10.0, injected                  # "up to ~9 deg"
-    _states(IDX, r"a ([\d.]+) deg peg tilt is levelled", injected)
+    # the README writes the same tilt with a Greek theta beside it; the pattern
+    # anchors on the ASCII around it rather than on a character _prose does not fold
+    _published(injected, "deg", (
+        (IDX, r"a ([\d.]+) deg peg tilt is levelled"),
+        (RM, r"\(open-loop <=1/6\); a ([\d.]+) deg"),
+        (MAN, r"initial tilts up to ([\d.]+) deg are levelled")))
 
 
 # --------------------------------------------------------------------------- M3
@@ -381,8 +483,10 @@ def test_gripper_slip_curve():
     # the landing page publishes the firmest grasp and what it carried
     firmest = max(got)
     _states(IDX, r"a ([\d.]+) N grasp carries [\d.]+ N before it lets go", firmest)
-    _states(IDX, r"a [\d.]+ N grasp carries ([\d.]+) N before it lets go", got[firmest])
-    _states(IDX, r"([\d.]+) N held before slip", got[firmest])
+    _published(got[firmest], "N", (
+        (IDX, r"a [\d.]+ N grasp carries ([\d.]+) N before it lets go"),
+        (IDX, r"([\d.]+) N held before slip"),
+        (MAN, r"slips at [\d.]+/[\d.]+/[\d.]+/([\d.]+) N")))
 
 
 def test_qc_occlusion_pixel_counts_match_the_published_figures():
@@ -403,18 +507,40 @@ def test_qc_occlusion_pixel_counts_match_the_published_figures():
     assert round(loss) == 89, loss                # the "89 %" the docs print
 
     # and now the documents themselves, each read out of its own text
-    _states(IDX, r"In the same (\d+) px window", d["qc"]["roi_px"])
-    _states(IDX, r"the weld path sees (\d+) peg pixels", px["weld"]["top_peg"])
+    _published(px["weld"]["top_peg"], "peg", (
+        (IDX, r"the weld path sees (\d+) peg pixels"),
+        (RM, r"the weld path sees (\d+) peg px"),
+        (SRM, r"the weld path gives (\d+) peg px"),
+        (MAN, r"the weld path shows \*\*(\d+) peg px\*\*")))
+    _published(px["weld"]["top_rim"], "(?:pocket-)?rim", (
+        (RM, r"\d+ peg px and (\d+) rim px"),
+        (SRM, r"the weld path gives \d+ peg px / (\d+) rim px"),
+        (MAN, r"and \*\*(\d+) pocket-rim px\*\*")))
+    _published(px["jaws"]["top_rim"], "rim", (
+        (SRM, r"the jaw path gives \*\*0 peg px / (\d+) rim px\*\*"),
+        (MAN, r"the jaw path shows \*\*0 peg px\*\* and \*\*(\d+) rim px\*\*")))
+    _published(loss, "%", (
+        (IDX, r"with (\d+) % of the pocket rim gone"),
+        (IDX, r"-(\d+) % pocket rim seen"),
+        (RM, r"0 peg px, (\d+) % of the rim gone"),
+        (SRM, r"\((\d+) % of the rim gone\)"),
+        (MAN, r"\*\*(\d+) % of the rim gone\*\*")))
+    _published(d["qc"]["roi_px"], "px", (
+        (IDX, r"In the same (\d+) px window"),
+        (IDX, r"[\d]+ px of that (\d+) px window"),
+        (RM, r"measured in the same (\d+) px inspection window"),
+        (SRM, r"inside the (\d+) px inspection ROI"),
+        (SRM, r"which is [\d]+ px of a (\d+) px window"),
+        (MAN, r"inside the (\d+) px inspection ROI"),
+        (MAN, r"[\d]+ px of that (\d+) px window"),
+        ("sim/eval_qc_occlusion.py", r"its masks and its (\d+) px inspection ROI"),
+        ("sim/eval_qc_occlusion.py", r"at 720 rows the centred (\d+) px ROI"),
+        ("sim/eval_qc_occlusion.py", r"cannot claim a (\d+) px window"),
+        ("sim/sequencer.py", r"restricts the analysis to a centred (\d+) px ROI")))
+    # these two print the count without its unit beside it, so the census cannot
+    # see them and they stay plain pins
     _states(IDX, r"(\d+) -> 0 peg px in window", px["weld"]["top_peg"])
-    _states(IDX, r"with (\d+) % of the pocket rim gone", loss)
-    _states(IDX, r"-(\d+) % pocket rim seen", loss)
-    _states(SRM, r"inside the (\d+) px inspection ROI", d["qc"]["roi_px"])
-    _states(SRM, r"the weld path gives (\d+) peg px", px["weld"]["top_peg"])
-    _states(SRM, r"the weld path gives \d+ peg px / (\d+) rim px", px["weld"]["top_rim"])
-    _states(SRM, r"the jaw path gives \*\*0 peg px / (\d+) rim px\*\*", px["jaws"]["top_rim"])
-    _states(SRM, r"\((\d+) % of the rim gone\)", loss)
     _states(RMAP, r"against (\d+) on the weld path", px["weld"]["top_peg"])
-    _states(MAN, r"(\d+) peg px", px["weld"]["top_peg"])
 
 
 def test_qc_occlusion_rejects_a_unit_the_oracle_still_calls_good():
@@ -458,13 +584,34 @@ def test_qc_occlusion_rejects_a_unit_the_oracle_still_calls_good():
 
     # the pages that publish that unit, read out of themselves
     depth = j["oracle"]["depth_mm"]
-    _states(IDX, r"S4 inserts to ([\d.]+) mm", depth)
-    _states(SRM, r"inserts to ([\d.]+) mm at", depth)
-    _states(SRM, r"ACCEPT at ([\d.]+) mm /", depth)
-    _states(SRM, r"ACCEPT at [\d.]+ mm / ([\d.]+) deg", j["oracle"]["tilt_deg"])
-    _states(SRM, r"ACCEPT at [\d.]+ mm / [\d.]+ deg / ([\d.]+) mm on the oracle",
-            j["oracle"]["align_mm"])
-    _states(RMAP, r"insert to ([\d.]+) mm", depth)
+    _published(depth, "mm", (
+        (IDX, r"S4 inserts to ([\d.]+) mm"),
+        (IDX, r"([\d.]+) mm insert at [\d.]+ N"),
+        (RM, r"active in it anywhere, ([\d.]+) mm insert"),
+        (RM, r"insert to \*\*([\d.]+) mm at"),
+        (SRM, r"inserts to ([\d.]+) mm at"),
+        (RMAP, r"insert to ([\d.]+) mm"),
+        (RM, r"\*\*([\d.]+) mm / [\d.]+ deg / [\d.]+ mm ACCEPT\*\*"),
+        (SRM, r"ACCEPT at ([\d.]+) mm /"),
+        (MAN, r"Final unit: depth \*\*([\d.]+) mm\*\*"),
+        (MAN, r"the same seated unit \(([\d.]+) mm"),
+        (MAN, r"([\d.]+) mm at [\d.]+ deg tilt")))
+    _published(j["oracle"]["tilt_deg"], "deg", (
+        (RM, r"\*\*[\d.]+ mm / ([\d.]+) deg / [\d.]+ mm ACCEPT\*\*"),
+        (SRM, r"ACCEPT at [\d.]+ mm / ([\d.]+) deg"),
+        (MAN, r"tilt \*\*([\d.]+) deg\*\*"),
+        (MAN, r"the same seated unit \([\d.]+ mm / ([\d.]+) deg"),
+        (MAN, r"[\d.]+ mm at ([\d.]+) deg tilt")))
+    _published(j["oracle"]["align_mm"], "mm", (
+        (RM, r"\*\*[\d.]+ mm / [\d.]+ deg / ([\d.]+) mm ACCEPT\*\*"),
+        (SRM, r"ACCEPT at [\d.]+ mm / [\d.]+ deg / ([\d.]+) mm on the oracle"),
+        (MAN, r"alignment error \*\*([\d.]+) mm\*\*"),
+        (MAN, r"the same seated unit \([\d.]+ mm / [\d.]+ deg / ([\d.]+) mm")))
+    # the camera's own two readings of that same unit, which MANIPULATION.md
+    # prints beside the oracle's to show how far the estimate sits from truth
+    _published(w["camera"]["align_err_mm"], "mm", ((MAN, r"align ([\d.]+) mm, depth"),))
+    _published(w["camera"]["depth_mm_est"], "mm",
+               ((MAN, r"align [\d.]+ mm, depth ([\d.]+) mm"),))
     # the landing page's word, not just its number. It prints that verdict in the
     # grid that reports the jaw path's "1116 -> 0 peg px", so it is the ORACLE's
     # reading of the very unit the camera rejected -- re-derived from ok(), not
@@ -505,16 +652,23 @@ def test_qc_occlusion_is_the_cell_and_not_the_measurement():
     assert delta_mm == 7.74
     assert delta_px == 16.0
     assert delta_px < 0.1 * d["qc"]["roi_px"]
-    _states(IDX, r"settle the part ([\d.]+) mm apart", delta_mm)
-    m = re.search(r"(\d+) px of that (\d+) px window", _prose(IDX))
-    assert m, "docs/index.html no longer states the pose offset in px"
-    assert (float(m.group(1)), float(m.group(2))) == (delta_px, d["qc"]["roi_px"]), m.groups()
+    _published(delta_mm, "mm", (
+        (IDX, r"settle the part ([\d.]+) mm apart"),
+        (MAN, r"settle the part \*\*([\d.]+) mm\*\* apart"),
+        (SRM, r"settle the part ([\d.]+) mm apart, which is")))
+    # the px offset and the ROI it is a fraction OF are published in one breath;
+    # the two patterns keep them coupled while each still names its own numeral
+    _published(delta_px, "px", (
+        (IDX, r"(\d+) px of that [\d]+ px window"),
+        (MAN, r"(\d+) px of that [\d]+ px window"),
+        (SRM, r"which is (\d+) px of a [\d]+ px window")))
 
     # the weld column is the published reference cycle, independently re-run:
     # MANIPULATION.md's "75.84 s against the weld path's 42.58 s"
     assert round(w["cycle_time_s"], 2) == 42.58
     assert round(w["cycle_time_s"], 1) == round(load("logs/cycle_001.json")[-1]["cycle_time_s"], 1)
-    _states(MAN, r"against the weld path's ([\d.]+) s", w["cycle_time_s"])
+    _states(MAN, r"Full cycle \*\*[\d.]+ s\*\* against the weld path's ([\d.]+) s",
+            w["cycle_time_s"])
 
     # The jaw-path comparison figure, 75.84 s, is the one number in this file with
     # NO committed artefact behind it: it comes from sim/test_cell_gripper.py,
@@ -522,16 +676,71 @@ def test_qc_occlusion_is_the_cell_and_not_the_measurement():
     # be kept CONSISTENT, which is the drift that actually happens -- so take
     # MANIPULATION.md's 2 dp as the published value, make every rounder copy agree
     # with it, and use it as the bound below instead of a literal typed in here.
-    gripper_s = float(_quoted(MAN, r"([\d.]+) s against the weld path's"))
-    _states(IDX, r"-- ([\d.]+) s against the weld path's", gripper_s)
-    _states(SRM, r"\*\*([\d.]+) s\*\* against the weld path's", gripper_s)
-    _states(RMAP, r"([\d.]+) s against the weld path's", gripper_s)
+    gripper_s = float(_quoted(MAN, r"Full cycle \*\*([\d.]+) s\*\* against the weld path's"))
+    _published(gripper_s, "s", (
+        (MAN, r"Full cycle \*\*([\d.]+) s\*\* against the weld path's"),
+        (MAN, r"deg tilt, ([\d.]+) s against the weld path's"),
+        (IDX, r"-- ([\d.]+) s against the weld path's"),
+        (IDX, r"([\d.]+) s cycle \(takt <= 85 s\)"),
+        (RM, r"mm insert, ([\d.]+) s,"),
+        (RM, r"\*\*([\d.]+) s\*\* \(oracle-gated"),
+        (SRM, r"\*\*([\d.]+) s\*\* against the weld path's"),
+        (RMAP, r"([\d.]+) s against the weld path's"),
+        ("sim/demo_cell_cycle.py", r"Measured ([\d.]+) s against the weld path's"),
+        ("sim/demo_cell_cycle.py", r"measured jaw cycle ([\d.]+) s"),
+        ("sim/eval_qc_occlusion.py", r"runs LONGER than the ([\d.]+) s takt"),
+        ("sim/test_cell_gripper.py", r"the weld-free cycle measures ([\d.]+) s")))
 
     # the jaws column runs LONGER than that published figure, and must: a camera
     # REJECT sends S6 to the far reject bin, while the 75.84 s is the oracle-gated
     # ACCEPT branch sim/test_cell_gripper.py runs with no renderer attached. Same
     # cycle, different S6 branch -- which branch it takes is what this eval measures.
     assert j["cycle_time_s"] > gripper_s, (j["cycle_time_s"], gripper_s)
+
+    # three documents publish the GAP between the two cycles rather than either
+    # end of it, so derive the gap instead of letting a subtraction be typed
+    _published(gripper_s - w["cycle_time_s"], "s", (
+        (SRM, r"itemises that \+(\d+) s per GRAFCET step"),
+        (IDX, r"That is where the extra (\d+) s goes"),
+        ("sim/demo_cell_cycle.py", r"itemises where the extra (\d+) s goes")))
+
+    # Five more figures the gripper cell publishes with no committed artefact
+    # behind them, held by the same doctrine as the 75.84 s above: take the
+    # deepest-precision copy as the published value, make every other copy agree
+    # with it, and census the tree so a sixth copy cannot appear unpinned.
+    jaws_depth = float(_quoted(MAN, r"force-regulates the insert to \*\*([\d.]+) mm\*\*"))
+    _published(jaws_depth, "mm",
+               ((MAN, r"force-regulates the insert to \*\*([\d.]+) mm\*\*"),))
+    # it is a DIFFERENT measurement from the oracle's 22.1209 mm -- a jaw-frame
+    # reading of the same seated unit -- so they are only held to agree to a tenth
+    assert round(jaws_depth, 1) == round(j["oracle"]["depth_mm"], 1)
+    peak_n = float(_quoted(MAN, r"at \*\*([\d.]+) N\*\* peak and then"))
+    _published(peak_n, "N", (
+        (MAN, r"at \*\*([\d.]+) N\*\* peak and then"),
+        (RM, r"insert to \*\*[\d.]+ mm at ([\d.]+) N\*\*"),
+        (IDX, r"S4 inserts to [\d.]+ mm at ([\d.]+) N"),
+        (IDX, r"[\d.]+ mm insert at ([\d.]+) N"),
+        (SRM, r"inserts to [\d.]+ mm at ([\d.]+) N peak")))
+    pick_n = float(_quoted(MAN, r"\(S1, ([\d.]+) N measured on its own pad sensor\)"))
+    _published(pick_n, "N", (
+        (MAN, r"\(S1, ([\d.]+) N measured on its own pad sensor\)"),
+        (RM, r"off the table \(([\d.]+) N\) and sets it down"),
+        (IDX, r"off the table at ([\d.]+) N on its own pad sensor"),
+        (SRM, r"off the table \(S1, ([\d.]+) N\)")))
+    drift_mm = float(_quoted(MAN, r"\(S5, \*\*([\d.]+) mm\*\* drift\)"))
+    _published(drift_mm, "mm", (
+        (MAN, r"\(S5, \*\*([\d.]+) mm\*\* drift\)"),
+        (RM, r"re-grips the unit \(([\d.]+) mm drift\)"),
+        (IDX, r"([\d.]+) mm re-grip drift"),
+        (SRM, r"\(S5, ([\d.]+) mm drift\)")))
+    slip_mm = float(_quoted(MAN, r"friction alone \(\*\*([\d.]+) mm\*\* drift in the jaw frame\)"))
+    _published(slip_mm, "mm", (
+        (MAN, r"friction alone \(\*\*([\d.]+) mm\*\* drift in the jaw frame\)"),
+        (RM, r"carried on friction \(([\d.]+) mm slip\)"),
+        (RM, r"sets it down, ([\d.]+) mm slip over the carry"),
+        (IDX, r"friction alone with ([\d.]+) mm of slip"),
+        (SRM, r"\(S3/S4, ([\d.]+) mm slip over the carry\)"),
+        ("sim/test_cell_gripper.py", r"Measured drift is ([\d.]+) mm")))
 
 
 # ------------------------------------------------------------------- benchmark
@@ -587,15 +796,23 @@ def test_cycle_time_matches_the_published_42_6_s():
     t = log[-1]["cycle_time_s"]
     assert round(t, 1) == 42.6, t
 
-    _states(IDX, r"([\d.]+) s cycle \(takt <= 60 s\)", t)
-    _states(IDX, r"against the weld path's ([\d.]+) s", t)
-    _states(RM, r"Cycle time \| \*\*([\d.]+) s\*\* \(takt target <= 60 s\)", t)
-    _states(SRM, r"Reference cycle: ([\d.]+) s", t)
-    _states(SRM, r"against the weld path's ([\d.]+) s", t)
-    _states(RMAP, r"full cycle ([\d.]+) s <= 60 s takt", t)
-    _states(RMAP, r"against the weld path's ([\d.]+) s", t)
-    _states(MAN, r"published ([\d.]+) s reference cycle", t)
-    _states(MAN, r"against the weld path's ([\d.]+) s", t)     # to 2 dp there
+    _published(t, "s", (
+        (IDX, r"([\d.]+) s cycle \(takt <= 60 s\)"),
+        (IDX, r"against the weld path's ([\d.]+) s"),
+        (RM, r"Cycle time \| \*\*([\d.]+) s\*\* \(takt target <= 60 s\)"),
+        (SRM, r"Reference cycle: ([\d.]+) s"),
+        (SRM, r"against the weld path's ([\d.]+) s"),
+        (RMAP, r"full cycle ([\d.]+) s <= 60 s takt"),
+        (RMAP, r"against the weld path's ([\d.]+) s"),
+        (MAN, r"published ([\d.]+) s reference cycle"),
+        # MANIPULATION.md prints it to 2 dp, twice, in the two sentences that
+        # compare the jaw cell against it
+        (MAN, r"Full cycle \*\*[\d.]+ s\*\* against the weld path's ([\d.]+) s"),
+        (MAN, r"deg tilt, [\d.]+ s against the weld path's ([\d.]+) s"),
+        ("sim/demo_cell_cycle.py", r"Measured reference cycle: ([\d.]+) s"),
+        ("sim/demo_cell_cycle.py", r"Measured [\d.]+ s against the weld path's ([\d.]+) s"),
+        ("sim/demo_cell_cycle.py", r"measured weld cycle ([\d.]+) s"),
+        ("sim/test_cell_gripper.py", r"that measures ([\d.]+) s end to end")))
 
     # the page publishes TWO takt bounds -- 60 s beside this cycle and 85 s beside
     # the gripper cell's 75.8 s -- so the bound is addressed through the cycle it
@@ -637,38 +854,28 @@ def test_qc_residuals_match_the_published_1_6_and_3_4_mm():
     assert abs(abs(qc["cam_align_mm"] - qc["oracle_align_mm"]) - align) < 1e-3, qc
     assert abs(abs(qc["cam_depth_mm"] - qc["oracle_depth_mm"]) - depth) < 1e-3, qc
 
-    _states(IDX, r"\+-([\d.]+) mm QC alignment", align)
-    _states(IDX, r"\+-([\d.]+) mm insert depth", depth)
-    _states(RM, r"alignment \(camera vs sim oracle\) \| \+-([\d.]+) mm", align)
-    _states(RM, r"QC residual, insertion depth \| \+-([\d.]+) mm", depth)
-    _states(SRM, r"alignment \+-([\d.]+) mm", align)
-    _states(SRM, r"alignment \+-[\d.]+ mm, depth \+-([\d.]+) mm", depth)
-    _states(RMAP, r"residuals align \+-([\d.]+) mm", align)
-    _states(RMAP, r"residuals align \+-[\d.]+ mm / depth \+-([\d.]+) mm", depth)
+    # the baked cockpit preview prints the pair too, as chips; dashboard/app.py
+    # holds only the Jinja placeholders, so the literals live in the bake alone
+    _published(align, "mm", (
+        (IDX, r"\+-([\d.]+) mm QC alignment"),
+        (RM, r"alignment \(camera vs sim oracle\) \| \+-([\d.]+) mm"),
+        (SRM, r"alignment \+-([\d.]+) mm"),
+        (RMAP, r"residuals align \+-([\d.]+) mm"),
+        (PRE, r"([\d.]+) mm QC residual . alignment")),
+        # sequencer.py's two 1.6 mm are a RELEASE HEIGHT, not this residual --
+        # same numeral, same unit, different quantity
+        aka=(("sim/sequencer.py", r"the extra [\d.]+ mm is a release height"),
+             ("sim/sequencer.py", r"the jaws open with the unit [\d.]+ mm above the surface")))
+    _published(depth, "mm", (
+        (IDX, r"\+-([\d.]+) mm insert depth"),
+        (RM, r"QC residual, insertion depth \| \+-([\d.]+) mm"),
+        (SRM, r"alignment \+-[\d.]+ mm, depth \+-([\d.]+) mm"),
+        (RMAP, r"residuals align \+-[\d.]+ mm / depth \+-([\d.]+) mm"),
+        (PRE, r"([\d.]+) mm QC residual . depth"),
+        (MAN, r"depth estimate reads ~([\d.]+) mm")))
 
 
 # --------------------------------------------------------------- M4 jaw geometry
-
-def _figure_quotes(fig):
-    """Which files in the tree print ``fig``, and how many times each.
-
-    Source and prose only: the committed JSON is the data, not a quotation of
-    it, and it is pinned by path at the top of this file. This is what turns a
-    pin on a figure into a pin on EVERY copy of that figure -- a published
-    number is only guarded if the guard knows where all of it lives."""
-    out, pat = {}, r"(?<![\d.])" + re.escape(fig) + r"(?![\d])"
-    for base, dirs, names in os.walk(ROOT):
-        dirs[:] = [d for d in dirs if d not in (".git", "__pycache__")]
-        for name in names:
-            if name.rsplit(".", 1)[-1] not in ("py", "md", "html", "txt", "yml"):
-                continue
-            path = os.path.join(base, name)
-            with open(path, encoding="utf-8") as f:
-                hits = len(re.findall(pat, f.read()))
-            if hits:
-                out[os.path.relpath(path, ROOT).replace(os.sep, "/")] = hits
-    return out
-
 
 def _const(rel, name):
     """A module-level constant, off the file's AST -- sim/sequencer.py imports
@@ -821,8 +1028,8 @@ def test_jaw_geometry_matches_the_prose_that_states_it():
     want = {}
     for rel, _pat in QUOTES:
         want[rel] = want.get(rel, 0) + 1
-    assert _figure_quotes(fig) == want, \
-        f"the {fig} mm gap is written {_figure_quotes(fig)} and pinned {want} " \
+    assert _figure_quotes(fig, "mm") == want, \
+        f"the {fig} mm gap is written {_figure_quotes(fig, 'mm')} and pinned {want} " \
         f"-- an unpinned copy of a published figure is how 42.7 mm survived"
 
     # THE PART, off the cell scene's own base body rather than from the prose.
