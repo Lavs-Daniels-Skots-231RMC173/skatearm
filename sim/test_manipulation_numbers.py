@@ -426,6 +426,27 @@ def _states(rel, pattern, derived):
     return float(txt)
 
 
+def _figure_quotes(fig):
+    """Which files in the tree print ``fig``, and how many times each.
+
+    Source and prose only: the committed JSON is the data, not a quotation of
+    it, and it is pinned by path at the top of this file. This is what turns a
+    pin on a figure into a pin on EVERY copy of that figure -- a published
+    number is only guarded if the guard knows where all of it lives."""
+    out, pat = {}, r"(?<![\d.])" + re.escape(fig) + r"(?![\d])"
+    for base, dirs, names in os.walk(ROOT):
+        dirs[:] = [d for d in dirs if d not in (".git", "__pycache__")]
+        for name in names:
+            if name.rsplit(".", 1)[-1] not in ("py", "md", "html", "txt", "yml"):
+                continue
+            path = os.path.join(base, name)
+            with open(path, encoding="utf-8") as f:
+                hits = len(re.findall(pat, f.read()))
+            if hits:
+                out[os.path.relpath(path, ROOT).replace(os.sep, "/")] = hits
+    return out
+
+
 def _const(rel, name):
     """A module-level constant, off the file's AST -- sim/sequencer.py imports
     mujoco and numpy, so the hardware-free job cannot import it."""
@@ -480,12 +501,14 @@ def test_jaw_geometry_matches_the_prose_that_states_it():
     them: they are pure geometry, so the geometry itself is the guard.
 
     Every figure below is rebuilt from the geoms sim/make_cell_scene.py emits and
-    checked against the sentence quoting it, in the file quoting it. Change a pad
-    size, the V's 45 deg, OPEN or the slide range and the prose in
-    make_cell_scene.py, sequencer.py and the spec's DECISION 4 silently stops
-    being true -- the same drift the rest of this file exists to catch, applied
-    to the one family that predates it. It had already drifted: sequencer.py
-    quoted a 42.7 mm geometric tip gap this construction never produces."""
+    checked against the sentence quoting it, in the file quoting it -- all seven
+    of them, because the tip gap did not stay in sim/: it is the premise of the
+    camera-occlusion result too, and it is quoted in both READMEs and in
+    docs/MANIPULATION.md. Change a pad size, the V's 45 deg, OPEN or the slide
+    range and that prose silently stops being true -- the same drift the rest of
+    this file exists to catch, applied to the one family that predates it. It had
+    already drifted: sequencer.py quoted a 42.7 mm geometric tip gap this
+    construction never produces."""
     CELL, SEQ = "sim/make_cell_scene.py", "sim/sequencer.py"
     SPEC = "specs/demo_task_spec.md"     # DECISION 4's annotation quotes them too
     EPS = 2e-6      # the builder prints pos and euler to 6 dp, so a micron is the
@@ -538,11 +561,26 @@ def test_jaw_geometry_matches_the_prose_that_states_it():
     over = float(_quoted(SEQ, r"parks the jaw ([\d.]+) mm past it"))
     extra = float(_quoted(SEQ, r"The extra ([\d.]+) mm is the stop"))
     assert abs(extra - 2 * over) < 1e-12, (extra, over)   # one overshoot per jaw
+    # The gap is quoted TEN times, and only four of them are in the two sim
+    # modules this guard grew up beside. The other six say the same thing in
+    # other words -- the base's 60 mm length does not fit between the jaws --
+    # and one of those six is the premise the entire camera-occlusion result
+    # rests on. Pinning a figure only in the files the guard happens to sit next
+    # to would leave the top-level README free to keep publishing a gap the
+    # geometry had stopped producing, which is the drift, not a lesser cousin of
+    # it. So every copy is pinned, and they are all made to agree.
+    QUOTES = ((SEQ, r"tip gap is ([\d.]+) mm MEASURED"),
+              (SEQ, r"so ([\d.]+) mm is the mechanical maximum"),
+              (SEQ, r"exceeds the ([\d.]+) mm tip gap measured below"),
+              (SEQ, r"\(([\d.]+) mm of tip gap across a"),
+              (CELL, r"the ([\d.]+) mm tip gap the"),
+              (SPEC, r"([\d.]+) mm at the stop"),
+              ("sim/eval_qc_occlusion.py", r"exceeds the ([\d.]+) mm tip gap"),
+              ("docs/MANIPULATION.md", r"exceeds the ([\d.]+) mm tip gap"),
+              ("README.md", r"exceeds the ([\d.]+) mm jaw gap"),
+              ("sim/README.md", r"exceeds the ([\d.]+) mm jaw gap"))
     gap = None
-    for rel, pat in ((SEQ, r"tip gap is ([\d.]+) mm MEASURED"),
-                     (SEQ, r"\(([\d.]+) mm of tip gap across a"),
-                     (CELL, r"the ([\d.]+) mm tip gap the"),
-                     (SPEC, r"([\d.]+) mm at the stop")):
+    for rel, pat in QUOTES:
         stated = _states(rel, pat, geom_gap + extra)
         assert gap in (None, stated), f"{rel} quotes the gap as {stated} mm " \
                                       f"where the rest of the repo says {gap} mm"
@@ -550,6 +588,19 @@ def test_jaw_geometry_matches_the_prose_that_states_it():
                                      # PUBLISHED gap, as the prose's own arithmetic
                                      # does; the line above is what ties it to the
                                      # geometry and to the measured overshoot.
+
+    # ...and there is no eleventh copy. Six of those pins exist only because the
+    # figure had escaped into files nobody thought to check, so the count is
+    # guarded too: quote the gap somewhere new without pinning it and this
+    # fails, which is the difference between fixing six oversights and closing
+    # the hole they came through.
+    fig = _quoted(SEQ, r"tip gap is ([\d.]+) mm MEASURED")
+    want = {}
+    for rel, _pat in QUOTES:
+        want[rel] = want.get(rel, 0) + 1
+    assert _figure_quotes(fig) == want, \
+        f"the {fig} mm gap is written {_figure_quotes(fig)} and pinned {want} " \
+        f"-- an unpinned copy of a published figure is how 42.7 mm survived"
 
     # THE PART, off the cell scene's own base body rather than from the prose.
     boxes = _xml_boxes(mcs.SQUARE_BASE)
