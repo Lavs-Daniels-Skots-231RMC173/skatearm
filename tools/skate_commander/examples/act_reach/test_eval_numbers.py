@@ -18,6 +18,16 @@ row label: three tables carry a "Both hands within 8 cm" row and two open with
 the same first cell, so only the full header identifies one — and pinning the
 header also catches a column being reordered, renamed or dropped.
 
+The training-config block at the end is a different kind of check, and worth
+naming as such. There is no committed artefact for the training run — the loss
+curve is a PNG — so nothing here re-derives 52 M parameters or a 32-minute
+wall-clock from data, and this file does not pretend otherwise. What it does
+instead is make the README's config table the single source: every other copy of
+those figures, across four documents, is read against the table cell, and then
+the tree is swept for a copy nobody pinned. That is the drift these particular
+figures actually suffer — a table edited and a landing-page stat card left
+behind — and it is checkable without a derivation the repo cannot honestly make.
+
 Run: pytest -q tools/skate_commander/examples/act_reach/test_eval_numbers.py
 """
 import html
@@ -30,6 +40,15 @@ import statistics as st
 HERE = os.path.dirname(os.path.abspath(__file__))
 ED = os.path.join(HERE, "eval_data")
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(HERE))))
+
+RM = "README.md"
+ARM = "tools/skate_commander/examples/act_reach/README.md"
+IDX = "docs/index.html"
+DD = "docs/deep-dive-act-normalization.md"
+# this file, as the tree walk below sees it -- derived rather than typed, so
+# moving the guard cannot quietly turn the checker into one of the documents it
+# is supposed to be checking
+GUARD = os.path.relpath(os.path.abspath(__file__), ROOT).replace(os.sep, "/")
 
 
 def load(name):
@@ -52,8 +71,32 @@ def _doc(rel):
     return txt
 
 
+_FLAT = {}
+
+
+def _flat(rel):
+    """``_doc`` again, flattened the rest of the way, for reading a figure out of
+    running prose rather than out of a table cell.
+
+    Every run of whitespace becomes one space, so a sentence that wrapped at a
+    column, a row of a markdown table and a stat card on the landing page all
+    read alike. Markdown gets its entities back here — ``_doc`` deliberately does
+    not, because the table checks above compare a cell character for character —
+    which is what makes ``52&nbsp;M`` read as the ``52 M`` a reader is shown.
+
+    Cached: ``_quotes`` below reads every file in the tree once per figure, and
+    the flattening it applies is the same one every time."""
+    if rel in _FLAT:
+        return _FLAT[rel]
+    txt = _doc(rel)
+    if rel.endswith(".md"):
+        txt = html.unescape(txt)
+    _FLAT[rel] = txt = re.sub(r"\s+", " ", txt)
+    return txt
+
+
 def _readme():
-    return _doc("README.md")
+    return _doc(RM)
 
 
 def _cells(line):
@@ -84,6 +127,81 @@ def _table(*header):
         assert rows, "README.md table %r has no rows left" % (header[0],)
         return rows
     raise AssertionError("README.md no longer has a table headed %r" % (header,))
+
+
+def _tree():
+    """Every committed file that could publish a figure.
+
+    This one is skipped: it is the checker, not a publisher, and its docstrings
+    quote the figures it guards by design."""
+    for base, dirs, names in os.walk(ROOT):
+        dirs[:] = [d for d in dirs if d not in (".git", "__pycache__")]
+        for name in names:
+            if name.rsplit(".", 1)[-1] not in ("py", "md", "html", "txt", "yml"):
+                continue
+            rel = os.path.relpath(os.path.join(base, name), ROOT).replace(os.sep, "/")
+            if rel != GUARD:
+                yield rel
+
+
+def _quotes(fig, unit):
+    """Which committed files PRINT ``fig unit``, and how many times each.
+
+    Carried WITH its unit, because the numeral on its own cannot tell 4 GB of
+    laptop GPU from the 4 of batch size. The separator is one-or-more whitespace
+    or star, so ``**52 M**`` in markdown and ``52&nbsp;M`` on the page are the
+    same quotation while a stylesheet's ``padding:4px`` is not one at all.
+
+    A figure whose unit is printed in FRONT of it cannot be carried here — the
+    final L1 loss is written "L1 loss 0.070", and a bare 0.070 with nothing
+    behind it is indistinguishable from any other. That one is pinned copy by
+    copy instead, and the test below says so."""
+    pat = re.compile(r"(?<![\d.])" + re.escape(fig) + r"(?![\d])[\s*]+"
+                     + unit + r"(?!\w)")
+    out = {}
+    for rel in _tree():
+        hits = len(pat.findall(_flat(rel)))
+        if hits:
+            out[rel] = hits
+    return out
+
+
+def _reads(rel, pattern):
+    """The figure a document prints at ``pattern``, as it prints it.
+
+    The assert is half the value: delete the sentence and the pin fails loudly
+    instead of quietly having nothing left to check."""
+    m = re.search(pattern, _flat(rel))
+    assert m, f"{rel} no longer states the figure this test reads: {pattern}"
+    return m.group(1)
+
+
+def _echoes(fig, unit, *quotes):
+    """Pin every sentence that reprints ``fig unit`` -- and prove there is no other.
+
+    ``quotes`` is the (document, pattern) list that publishes the figure, the
+    README's own config table included. Each pattern has to still find its
+    sentence and that sentence has to still print ``fig``, so a table edited
+    without its copies goes red, and so does a copy edited away from the table.
+
+    Then the pins are turned around and used as a census: what the tree prints
+    has to be exactly what the pins cover. Without that half, a fifth copy nobody
+    named is free to go stale, because nothing fails when it does -- which is the
+    whole reason these figures needed guarding rather than a comment.
+
+    Two patterns landing on the SAME sentence count as two pins against one
+    quotation, which fails: a pin has to name a copy of its own."""
+    pinned = {}
+    for rel, pattern in quotes:
+        got = _reads(rel, pattern)
+        assert got == fig, \
+            f"{rel} prints '{got} {unit}' where the config table says '{fig} {unit}'"
+        pinned[rel] = pinned.get(rel, 0) + 1
+    got = _quotes(fig, unit)
+    assert got == pinned, \
+        f"'{fig} {unit}' is printed {got} and pinned {pinned} -- a copy no pin " \
+        f"names is a copy nothing fails for"
+    return fig
 
 
 def summarize(R, L):
@@ -198,14 +316,14 @@ def test_deep_dive_and_landing_page_quote_the_same_headline():
     precision they chose, which is the only thing '~' can honestly mean."""
     s = load("summary.json")
 
-    dd = _doc("docs/deep-dive-act-normalization.md")
+    dd = _doc(DD)
     want = "**~%.1f / %.1f cm**" % (rh1(s["R_mean"]), rh1(s["L_mean"]))
     assert want in dd, f"the deep-dive no longer quotes the headline as {want}"
     want = "**~%d %%**" % rh0(s["succ_mean"])
     assert want in dd, f"the deep-dive no longer quotes the success rate as {want}"
 
     # the landing page rounds both hands together to a single whole number
-    m = re.search(r"~(\d+) cm mean reach error", _doc("docs/index.html"))
+    m = re.search(r"~(\d+) cm mean reach error", _doc(IDX))
     assert m, "docs/index.html no longer states a mean reach error"
     assert int(m.group(1)) == rh0((s["R_mean"] + s["L_mean"]) / 2), m.group(0)
 
@@ -313,3 +431,124 @@ def test_readme_success_wilson_ci():
     assert not unknown, f"README.md prints intervals no eval derives: {unknown}"
     missing = sorted(n for n, v in derived.items() if v not in printed)
     assert not missing, f"README.md no longer publishes the interval for: {missing}"
+
+
+def _cfg(table, label, pattern):
+    """One figure out of the Training config table, as the cell prints it."""
+    cell = table[label][0]
+    m = re.search(pattern, cell)
+    assert m, (f"README.md's config table prints {label!r} as {cell!r}, which no "
+               f"longer carries the figure this test reads: {pattern}")
+    return m.group(1)
+
+
+def test_readme_training_config_is_self_consistent():
+    """§2 Training config: the table's arithmetic, and the README that leans on it.
+
+    Nothing here is typed twice — every figure is read out of the config table
+    and then checked against the sentences that depend on it. The step count and
+    the wall-clock imply the throughput the same row prints in brackets. The peak
+    VRAM has to fit both the ceiling the prose claims and the card the table
+    names. The loss curve is a PNG, so its alt text is the only place a reader
+    without eyes on the image learns what it shows: it has to quote the table's
+    own final loss and step count.
+
+    The ceiling is checked in BOTH directions. "0.62 is under 1" still passes if
+    the prose quietly widens its own claim to 4 GB, so the ceiling also has to be
+    TIGHT — the next whole gigabyte up. A page may round 0.62 to a clean 1; it may
+    not round it into a different claim."""
+    t = _table("Setting", "Value")
+    card = int(_cfg(t, "Hardware", r"RTX 3050 Laptop · (\d+) GB\*\*"))
+    batch = _cfg(t, "Batch · steps", r"^(\d+) ·")
+    steps = int(_cfg(t, "Batch · steps", r"· \*\*([\d ]+)\*\*$").replace(" ", ""))
+    mins = int(_cfg(t, "Wall-clock", r"^\*\*≈ (\d+) min\*\*"))
+    rate = int(_cfg(t, "Wall-clock", r"\(~(\d+) steps/s\)$"))
+    peak = float(_cfg(t, "Peak VRAM", r"^\*\*([\d.]+) GB\*\*$"))
+    loss = _cfg(t, "Final L1 loss", r"^\*\*([\d.]+)\*\*$")
+    short = "%dk" % (steps // 1000)
+
+    assert rate == rh0(steps / (mins * 60)), (
+        "%d steps in %d min is %.2f steps/s, not the ~%d the table prints"
+        % (steps, mins, steps / (mins * 60), rate))
+    assert steps == int(short[:-1]) * 1000, \
+        f"{steps} steps abbreviates to {short}, which is a different number"
+
+    ceiling = int(_reads(RM, r"sits comfortably under \*\*(\d+) GB\*\* of VRAM"))
+    assert peak <= ceiling, \
+        f"the README claims the run sits under {ceiling} GB and the table prints {peak} GB"
+    assert math.ceil(peak) == ceiling, \
+        f"{peak} GB rounds up to {math.ceil(peak)} GB, not the {ceiling} GB claimed"
+    assert peak < card, f"{peak} GB does not fit the {card} GB card the table names"
+
+    m = re.search(r'alt="ACT training loss curve — ([\d.]+) to ([\d.]+) over (\d+k) steps">',
+                  _flat(RM))
+    assert m, "README.md's loss curve no longer describes the run in its alt text"
+    assert (m.group(2), m.group(3)) == (loss, short), m.group(0)
+    assert _reads(RM, r"Batch (\d+) holds peak VRAM at") == batch
+
+
+def test_training_figures_are_published_consistently():
+    """Every document that reprints a training figure is read against the table.
+
+    The config table is the source. The landing page prints the parameter count
+    and the wall-clock on stat cards and again in its lead; the deep-dive quotes
+    the parameter count, the card and the step count; the example README quotes
+    the wall-clock and the step count in the train command it tells you to run.
+    Each of those is pinned to the table cell, and then ``_echoes`` sweeps the
+    tree for a copy no pin names.
+
+    The final L1 loss is pinned but NOT censused, because it prints its unit in
+    front of it — "L1 loss", "training loss" — and ``_quotes`` carries a figure by
+    the unit behind it. Its four copies are named here in full instead, which
+    pins them all but cannot prove a fifth does not exist."""
+    t = _table("Setting", "Value")
+    params = _cfg(t, "Trainable params", r"^\*\*(\d+) M\*\*$")
+    card = _cfg(t, "Hardware", r"RTX 3050 Laptop · (\d+) GB\*\*")
+    steps = int(_cfg(t, "Batch · steps", r"· \*\*([\d ]+)\*\*$").replace(" ", ""))
+    mins = _cfg(t, "Wall-clock", r"^\*\*≈ (\d+) min\*\*")
+    rate = _cfg(t, "Wall-clock", r"\(~(\d+) steps/s\)$")
+    peak = _cfg(t, "Peak VRAM", r"^\*\*([\d.]+) GB\*\*$")
+    loss = _cfg(t, "Final L1 loss", r"^\*\*([\d.]+)\*\*$")
+    short = "%dk" % (steps // 1000)
+
+    _echoes(params, "M",
+            (RM, r"Trainable params \| \*\*(\d+) M\*\*"),
+            (RM, r"ResNet18 \+ Transformer · (\d+) M"),         # the pipeline diagram
+            (IDX, r"(\d+) M trainable params"),                 # the stat card
+            (IDX, r"Transformer, (\d+) M params\)"),            # and the lead beside it
+            (DD, r"Transformer, ~(\d+) M params\)"))
+    _echoes(mins, "min",
+            (RM, r"Wall-clock \| \*\*≈ (\d+) min\*\*"),
+            (RM, r"train ACT on the RTX 3050 \(~(\d+) min\)"),  # the quickstart
+            (ARM, r"~(\d+) min on an RTX 3050\)"),
+            (IDX, r"~(\d+) min on an RTX 3050"),
+            (IDX, r"trained in ~(\d+) min on a laptop"))
+    _echoes(short, "steps",
+            (RM, r"over (\d+k) steps\">"),                      # the loss-curve alt text
+            (ARM, r"batch \d+, (\d+k) steps,"),
+            (DD, r"over (\d+k) steps;"))
+    _echoes(card, "GB",
+            (RM, r"on a single (\d+) GB laptop GPU and rolled out"),
+            (RM, r"RTX 3050 Laptop · (\d+) GB\*\*"),
+            (RM, r"\*\*(\d+) GB is enough\.\*\*"),
+            (IDX, r"end to end on a single (\d+) GB laptop GPU\."),
+            (DD, r"behaviour-cloned from them on a (\d+) GB laptop GPU"))
+    _echoes(peak, "GB",
+            (RM, r"Peak VRAM \| \*\*([\d.]+) GB\*\*"),
+            (RM, r"holds peak VRAM at ([\d.]+) GB;"))
+    # the ceiling the test above checks the peak against -- censused so a second,
+    # looser "under N GB" sentence cannot appear somewhere nothing reads
+    _echoes(_reads(RM, r"sits comfortably under \*\*(\d+) GB\*\* of VRAM"), "GB",
+            (RM, r"sits comfortably under \*\*(\d+) GB\*\* of VRAM"))
+    _echoes(rate, "steps/s",
+            (RM, r"\(~(\d+) steps/s\)"))
+
+    for rel, pattern in ((RM, r"the policy trained to ([\d.]+) loss but first"),
+                         (DD, r"Trained ACT hit a clean \*\*L1 ≈ ([\d.]+)\*\*"),
+                         (DD, r"L1 action loss fell from ~[\d.]+ to \*\*([\d.]+)\*\* over"),
+                         (DD, r"A model with ([\d.]+) training loss")):
+        assert _reads(rel, pattern) == loss, \
+            f"{rel} states a final L1 loss the config table does not: {pattern}"
+    assert _reads(DD, r"L1 action loss fell from ~([\d.]+) to") == \
+        _reads(RM, r"loss curve — ([\d.]+) to [\d.]+ over"), \
+        "the deep-dive and the loss-curve alt text disagree about where the loss started"

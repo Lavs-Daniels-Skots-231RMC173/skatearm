@@ -109,12 +109,21 @@ def _prose(rel):
       of encoding the column each sentence happened to wrap at.
     * **Markup.** In an .html file the script and style blocks go, the tags come
       out and the entities go back in, so ``<b>&plusmn;1.6&nbsp;mm</b>`` reads as
-      the ``+-1.6 mm`` a visitor sees. A figure is published by the page, not by
-      the element it happens to sit in.
+      the ``+-1.6 mm`` a visitor sees. In a .md file the entities go back in too
+      and the bold markers come off, so ``**22.12&nbsp;mm**`` reads as the
+      ``22.12 mm`` a reader sees. A figure is published by the document, not by
+      the emphasis it happens to sit in.
     * **Typography.** The em dash, the times sign, the degree sign and their
       friends fold to an ASCII spelling everywhere, so ONE pattern pins a figure
       written ``&plusmn;1.6&nbsp;mm`` on the landing page, ``±1.6 mm`` in the
       README and ``+-1.6 mm`` in a docstring.
+
+    Two pieces of markdown deliberately stay. Tags are NOT pulled out of a .md,
+    because these documents write a bare '<' as "less than" -- "< 0.05 N", "<2
+    deg" -- and stripping ``<[^>]+>`` once the newlines are gone would swallow
+    everything between one of those and the next '>'. And only ``**`` folds, not
+    ``*`` and not ``__``: a single star is a glob in ``sim/demo_*.py`` and a
+    double underscore is ``__pycache__``.
 
     Re-flowing a comment, bolding a number or swapping a hyphen for an en dash
     must not turn a guarded figure into an unguarded one.
@@ -127,6 +136,8 @@ def _prose(rel):
     if rel.endswith(".html"):
         txt = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", txt)
         txt = html.unescape(re.sub(r"<[^>]+>", " ", txt))
+    elif rel.endswith(".md"):
+        txt = html.unescape(txt.replace("**", ""))
     for uni, plain in _TYPO:
         txt = txt.replace(uni, plain)
     if rel.endswith(".html"):
@@ -511,20 +522,20 @@ def test_qc_occlusion_pixel_counts_match_the_published_figures():
         (IDX, r"the weld path sees (\d+) peg pixels"),
         (RM, r"the weld path sees (\d+) peg px"),
         (SRM, r"the weld path gives (\d+) peg px"),
-        (MAN, r"the weld path shows \*\*(\d+) peg px\*\*")))
+        (MAN, r"the weld path shows (\d+) peg px")))
     _published(px["weld"]["top_rim"], "(?:pocket-)?rim", (
         (RM, r"\d+ peg px and (\d+) rim px"),
         (SRM, r"the weld path gives \d+ peg px / (\d+) rim px"),
-        (MAN, r"and \*\*(\d+) pocket-rim px\*\*")))
+        (MAN, r"and (\d+) pocket-rim px")))
     _published(px["jaws"]["top_rim"], "rim", (
-        (SRM, r"the jaw path gives \*\*0 peg px / (\d+) rim px\*\*"),
-        (MAN, r"the jaw path shows \*\*0 peg px\*\* and \*\*(\d+) rim px\*\*")))
+        (SRM, r"the jaw path gives 0 peg px / (\d+) rim px"),
+        (MAN, r"the jaw path shows 0 peg px and (\d+) rim px")))
     _published(loss, "%", (
         (IDX, r"with (\d+) % of the pocket rim gone"),
         (IDX, r"-(\d+) % pocket rim seen"),
         (RM, r"0 peg px, (\d+) % of the rim gone"),
         (SRM, r"\((\d+) % of the rim gone\)"),
-        (MAN, r"\*\*(\d+) % of the rim gone\*\*")))
+        (MAN, r"(\d+) % of the rim gone")))
     _published(d["qc"]["roi_px"], "px", (
         (IDX, r"In the same (\d+) px window"),
         (IDX, r"[\d]+ px of that (\d+) px window"),
@@ -588,24 +599,24 @@ def test_qc_occlusion_rejects_a_unit_the_oracle_still_calls_good():
         (IDX, r"S4 inserts to ([\d.]+) mm"),
         (IDX, r"([\d.]+) mm insert at [\d.]+ N"),
         (RM, r"active in it anywhere, ([\d.]+) mm insert"),
-        (RM, r"insert to \*\*([\d.]+) mm at"),
+        (RM, r"insert to ([\d.]+) mm at"),
         (SRM, r"inserts to ([\d.]+) mm at"),
         (RMAP, r"insert to ([\d.]+) mm"),
-        (RM, r"\*\*([\d.]+) mm / [\d.]+ deg / [\d.]+ mm ACCEPT\*\*"),
+        (RM, r"([\d.]+) mm / [\d.]+ deg / [\d.]+ mm ACCEPT"),
         (SRM, r"ACCEPT at ([\d.]+) mm /"),
-        (MAN, r"Final unit: depth \*\*([\d.]+) mm\*\*"),
+        (MAN, r"Final unit: depth ([\d.]+) mm"),
         (MAN, r"the same seated unit \(([\d.]+) mm"),
         (MAN, r"([\d.]+) mm at [\d.]+ deg tilt")))
     _published(j["oracle"]["tilt_deg"], "deg", (
-        (RM, r"\*\*[\d.]+ mm / ([\d.]+) deg / [\d.]+ mm ACCEPT\*\*"),
+        (RM, r"[\d.]+ mm / ([\d.]+) deg / [\d.]+ mm ACCEPT"),
         (SRM, r"ACCEPT at [\d.]+ mm / ([\d.]+) deg"),
-        (MAN, r"tilt \*\*([\d.]+) deg\*\*"),
+        (MAN, r"tilt ([\d.]+) deg"),
         (MAN, r"the same seated unit \([\d.]+ mm / ([\d.]+) deg"),
         (MAN, r"[\d.]+ mm at ([\d.]+) deg tilt")))
     _published(j["oracle"]["align_mm"], "mm", (
-        (RM, r"\*\*[\d.]+ mm / [\d.]+ deg / ([\d.]+) mm ACCEPT\*\*"),
+        (RM, r"[\d.]+ mm / [\d.]+ deg / ([\d.]+) mm ACCEPT"),
         (SRM, r"ACCEPT at [\d.]+ mm / [\d.]+ deg / ([\d.]+) mm on the oracle"),
-        (MAN, r"alignment error \*\*([\d.]+) mm\*\*"),
+        (MAN, r"alignment error ([\d.]+) mm"),
         (MAN, r"the same seated unit \([\d.]+ mm / [\d.]+ deg / ([\d.]+) mm")))
     # the camera's own two readings of that same unit, which MANIPULATION.md
     # prints beside the oracle's to show how far the estimate sits from truth
@@ -654,7 +665,7 @@ def test_qc_occlusion_is_the_cell_and_not_the_measurement():
     assert delta_px < 0.1 * d["qc"]["roi_px"]
     _published(delta_mm, "mm", (
         (IDX, r"settle the part ([\d.]+) mm apart"),
-        (MAN, r"settle the part \*\*([\d.]+) mm\*\* apart"),
+        (MAN, r"settle the part ([\d.]+) mm apart"),
         (SRM, r"settle the part ([\d.]+) mm apart, which is")))
     # the px offset and the ROI it is a fraction OF are published in one breath;
     # the two patterns keep them coupled while each still names its own numeral
@@ -667,7 +678,7 @@ def test_qc_occlusion_is_the_cell_and_not_the_measurement():
     # MANIPULATION.md's "75.84 s against the weld path's 42.58 s"
     assert round(w["cycle_time_s"], 2) == 42.58
     assert round(w["cycle_time_s"], 1) == round(load("logs/cycle_001.json")[-1]["cycle_time_s"], 1)
-    _states(MAN, r"Full cycle \*\*[\d.]+ s\*\* against the weld path's ([\d.]+) s",
+    _states(MAN, r"Full cycle [\d.]+ s against the weld path's ([\d.]+) s",
             w["cycle_time_s"])
 
     # The jaw-path comparison figure, 75.84 s, is the one number in this file with
@@ -676,15 +687,15 @@ def test_qc_occlusion_is_the_cell_and_not_the_measurement():
     # be kept CONSISTENT, which is the drift that actually happens -- so take
     # MANIPULATION.md's 2 dp as the published value, make every rounder copy agree
     # with it, and use it as the bound below instead of a literal typed in here.
-    gripper_s = float(_quoted(MAN, r"Full cycle \*\*([\d.]+) s\*\* against the weld path's"))
+    gripper_s = float(_quoted(MAN, r"Full cycle ([\d.]+) s against the weld path's"))
     _published(gripper_s, "s", (
-        (MAN, r"Full cycle \*\*([\d.]+) s\*\* against the weld path's"),
+        (MAN, r"Full cycle ([\d.]+) s against the weld path's"),
         (MAN, r"deg tilt, ([\d.]+) s against the weld path's"),
         (IDX, r"-- ([\d.]+) s against the weld path's"),
         (IDX, r"([\d.]+) s cycle \(takt <= 85 s\)"),
         (RM, r"mm insert, ([\d.]+) s,"),
-        (RM, r"\*\*([\d.]+) s\*\* \(oracle-gated"),
-        (SRM, r"\*\*([\d.]+) s\*\* against the weld path's"),
+        (RM, r"([\d.]+) s \(oracle-gated"),
+        (SRM, r"([\d.]+) s against the weld path's"),
         (RMAP, r"([\d.]+) s against the weld path's"),
         ("sim/demo_cell_cycle.py", r"Measured ([\d.]+) s against the weld path's"),
         ("sim/demo_cell_cycle.py", r"measured jaw cycle ([\d.]+) s"),
@@ -708,16 +719,16 @@ def test_qc_occlusion_is_the_cell_and_not_the_measurement():
     # behind them, held by the same doctrine as the 75.84 s above: take the
     # deepest-precision copy as the published value, make every other copy agree
     # with it, and census the tree so a sixth copy cannot appear unpinned.
-    jaws_depth = float(_quoted(MAN, r"force-regulates the insert to \*\*([\d.]+) mm\*\*"))
+    jaws_depth = float(_quoted(MAN, r"force-regulates the insert to ([\d.]+) mm"))
     _published(jaws_depth, "mm",
-               ((MAN, r"force-regulates the insert to \*\*([\d.]+) mm\*\*"),))
+               ((MAN, r"force-regulates the insert to ([\d.]+) mm"),))
     # it is a DIFFERENT measurement from the oracle's 22.1209 mm -- a jaw-frame
     # reading of the same seated unit -- so they are only held to agree to a tenth
     assert round(jaws_depth, 1) == round(j["oracle"]["depth_mm"], 1)
-    peak_n = float(_quoted(MAN, r"at \*\*([\d.]+) N\*\* peak and then"))
+    peak_n = float(_quoted(MAN, r"at ([\d.]+) N peak and then"))
     _published(peak_n, "N", (
-        (MAN, r"at \*\*([\d.]+) N\*\* peak and then"),
-        (RM, r"insert to \*\*[\d.]+ mm at ([\d.]+) N\*\*"),
+        (MAN, r"at ([\d.]+) N peak and then"),
+        (RM, r"insert to [\d.]+ mm at ([\d.]+) N"),
         (IDX, r"S4 inserts to [\d.]+ mm at ([\d.]+) N"),
         (IDX, r"[\d.]+ mm insert at ([\d.]+) N"),
         (SRM, r"inserts to [\d.]+ mm at ([\d.]+) N peak")))
@@ -727,15 +738,15 @@ def test_qc_occlusion_is_the_cell_and_not_the_measurement():
         (RM, r"off the table \(([\d.]+) N\) and sets it down"),
         (IDX, r"off the table at ([\d.]+) N on its own pad sensor"),
         (SRM, r"off the table \(S1, ([\d.]+) N\)")))
-    drift_mm = float(_quoted(MAN, r"\(S5, \*\*([\d.]+) mm\*\* drift\)"))
+    drift_mm = float(_quoted(MAN, r"\(S5, ([\d.]+) mm drift\)"))
     _published(drift_mm, "mm", (
-        (MAN, r"\(S5, \*\*([\d.]+) mm\*\* drift\)"),
+        (MAN, r"\(S5, ([\d.]+) mm drift\)"),
         (RM, r"re-grips the unit \(([\d.]+) mm drift\)"),
         (IDX, r"([\d.]+) mm re-grip drift"),
         (SRM, r"\(S5, ([\d.]+) mm drift\)")))
-    slip_mm = float(_quoted(MAN, r"friction alone \(\*\*([\d.]+) mm\*\* drift in the jaw frame\)"))
+    slip_mm = float(_quoted(MAN, r"friction alone \(([\d.]+) mm drift in the jaw frame\)"))
     _published(slip_mm, "mm", (
-        (MAN, r"friction alone \(\*\*([\d.]+) mm\*\* drift in the jaw frame\)"),
+        (MAN, r"friction alone \(([\d.]+) mm drift in the jaw frame\)"),
         (RM, r"carried on friction \(([\d.]+) mm slip\)"),
         (RM, r"sets it down, ([\d.]+) mm slip over the carry"),
         (IDX, r"friction alone with ([\d.]+) mm of slip"),
@@ -799,7 +810,7 @@ def test_cycle_time_matches_the_published_42_6_s():
     _published(t, "s", (
         (IDX, r"([\d.]+) s cycle \(takt <= 60 s\)"),
         (IDX, r"against the weld path's ([\d.]+) s"),
-        (RM, r"Cycle time \| \*\*([\d.]+) s\*\* \(takt target <= 60 s\)"),
+        (RM, r"Cycle time \| ([\d.]+) s \(takt target <= 60 s\)"),
         (SRM, r"Reference cycle: ([\d.]+) s"),
         (SRM, r"against the weld path's ([\d.]+) s"),
         (RMAP, r"full cycle ([\d.]+) s <= 60 s takt"),
@@ -807,7 +818,7 @@ def test_cycle_time_matches_the_published_42_6_s():
         (MAN, r"published ([\d.]+) s reference cycle"),
         # MANIPULATION.md prints it to 2 dp, twice, in the two sentences that
         # compare the jaw cell against it
-        (MAN, r"Full cycle \*\*[\d.]+ s\*\* against the weld path's ([\d.]+) s"),
+        (MAN, r"Full cycle [\d.]+ s against the weld path's ([\d.]+) s"),
         (MAN, r"deg tilt, [\d.]+ s against the weld path's ([\d.]+) s"),
         ("sim/demo_cell_cycle.py", r"Measured reference cycle: ([\d.]+) s"),
         ("sim/demo_cell_cycle.py", r"Measured [\d.]+ s against the weld path's ([\d.]+) s"),
