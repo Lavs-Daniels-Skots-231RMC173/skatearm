@@ -36,6 +36,17 @@ lets go (S2), the right inserts into it standing on the table (S3/S4), and the
 left comes back for the ASSEMBLED unit and presents it to the QC cameras at
 the same fixture pose they were calibrated around (S5). The weld path keeps
 its mid-air meet, which is what a weld can do and a gripper cannot.
+
+That detour is also what buys the weld-free path its own camera gate. Between
+the right hand backing out and the left hand coming back, the finished unit
+stands FREE at the assembly station and no hand is on it -- an instant a welded
+cell structurally cannot have, since there the unit leaves a hand only onto a
+weld. S5 reads a SECOND CAMERA PAIR at that instant (``qc.STATION_PAIR``:
+``qc_top``, which sees both places, plus ``qc_station_side`` aimed at the
+station), and that reading is what gates the weld-free cycle. The fixture pair
+is still read afterwards at the presented pose and still logged -- occluded, as
+published -- so the finding that cost the welds their camera gate stays visible
+in the same event stream that now shows it repaid.
 """
 import json
 import time
@@ -174,6 +185,13 @@ class Cell:
         self.gl_hold = None      # left wrist target held through S2..S6
         self.grip_cmd = GRIP_OPEN
         self.grip_cmd_L = GRIP_OPEN
+        # S5's in-situ reading, taken at the assembly station in the instant no
+        # hand is on the part. None on the weld path, where no such instant
+        # exists, and None until it is taken -- so "did the station gate run?"
+        # is a question about the cell and never about a stale attribute.
+        self.qc_station = None
+        self.qc_station_verdict = None
+        self.qc_gate = None
 
     # --- sensors / predicates (no timers!) ---
     def _sensor_adr(self, name):
@@ -758,6 +776,7 @@ def run_cycle(cell, steps=None, state=None):
 
     # ----- S5: retreat right + CAMERA QC verify (oracle kept as cross-check) -----
     if "S5" in steps:
+        import qc as qc_mod
         if cell.jaws:
             # --- the RIGHT hand backs out of the bore ----------------------
             # Straight UP first, along the axis it came down. Its jaws are open
@@ -768,13 +787,47 @@ def run_cycle(cell, steps=None, state=None):
             servo_both(rout, cell.gl_hold, cell.grip_cmd, seconds=2.0, tol=0.008)
             servo_both(R_PARK, cell.gl_hold, cell.grip_cmd, seconds=2.4, tol=0.015)
 
+            # --- IN-SITU QC: the instant BOTH hands are clear --------------
+            # Right now the finished unit stands FREE at the assembly station.
+            # The right jaws opened around it at the end of S4, the right wrist
+            # has climbed 85 mm and parked, and the left hand has not started
+            # back in. Nothing is touching the part -- an instant the weld cell
+            # structurally cannot have, because there the unit is off a hand
+            # only while it is on a weld. Losing the welds is what created it.
+            # The fixture pair cannot use it: those cameras are aimed at a pose
+            # in mid air 95 mm above here, and from the station they read 0 stub
+            # px and 46 rim px -- blind, not merely worse. So this gate is the
+            # SECOND CAMERA PAIR, aimed at the station: qc_top, which sees both
+            # places, plus qc_station_side, the same lens at the same standoff
+            # as qc_side and mounted along -y. Same qc.measure(), same masks,
+            # same thresholds; only the viewpoint is new.
+            if getattr(cell, "qc_renderer", None) is not None:
+                st = qc_mod.measure(cell.qc_renderer, d,
+                                    unit_z=float(cell.part_pose("base")[2]),
+                                    pair=qc_mod.STATION_PAIR)
+                cell.qc_station = st
+                cell.qc_station_verdict = qc_mod.verdict(st)
+                cell.event("S5", "STATION QC verify (in-situ, both hands clear)",
+                           cam_align_mm=st["align_err_mm"],
+                           cam_depth_mm=st["depth_mm_est"],
+                           cam_peg_present=st["peg_present"],
+                           cam_result=cell.qc_station_verdict,
+                           oracle_depth_mm=cell.insertion_depth() * 1000,
+                           oracle_align_mm=cell.align_err_xy() * 1000,
+                           oracle_tilt_deg=cell.tilt_deg("peg"),
+                           unit_at_station_m=[round(float(v), 5)
+                                              for v in cell.part_pose("base")])
+
             # --- the LEFT hand re-grips the ASSEMBLED unit -----------------
-            # It has to. The QC cameras are calibrated on a pose in mid air
-            # (MEET_BASE) and the unit is now standing on the table 95 mm below
-            # it. Re-teaching QC to the table is the other way to solve this and
-            # it is the wrong one: in a real cell the calibration is the fixed
-            # thing, and here the numbers in test_manipulation_numbers.py are
-            # pinned to it. So the cell brings the part back to the camera.
+            # It still has to, and the station gate does not change that. The
+            # fixture calibration stays where it is -- in a real cell the
+            # calibration is the fixed thing, and the numbers in
+            # test_manipulation_numbers.py are pinned to it -- so the cell keeps
+            # bringing the part back to MEET_BASE for the fixture pair to read.
+            # What the station pair adds is a verdict taken where the part
+            # actually is; re-teaching the FIXTURE to the table would have
+            # thrown away the calibration and the published numbers with it,
+            # which is why that is still the wrong way round.
             base1 = cell.part_pose("base")
             lpad = base1 + np.array([LGRIP_DX, 0.0, LGRIP_REL])
             cell.grip_cmd_L = GRIP_OPEN
@@ -823,7 +876,6 @@ def run_cycle(cell, steps=None, state=None):
         else:
             reach(m, d, {"right": [0.22, 0.36, 0.30]}, seconds=2.2,
                   on_frame=on_frame, tol=0.015)
-        import qc as qc_mod
         meas = None
         if getattr(cell, "qc_renderer", None) is not None:
             meas = qc_mod.measure(cell.qc_renderer, d,
@@ -836,9 +888,23 @@ def run_cycle(cell, steps=None, state=None):
         oracle_pass = (depth >= 0.015) and (tilt < 6.0) and (err_xy < 0.006) \
             and not getattr(cell, "qc_jam", False)
         if meas is not None:
-            cell.qc_pass = (cam_verdict == "ACCEPT") and not getattr(cell, "qc_jam", False)
+            # WHICH pair gates. The fixture pair gates wherever it can see the
+            # part, and on the weld path that is everywhere -- there is no
+            # station reading on that path at all, because the unit is never off
+            # a hand there, so this branch is byte-identical to what shipped.
+            # On the weld-free path the fixture pair is occluded at this pose by
+            # the left tool holding the unit up to it, which is the finding this
+            # project published and did not want to lose: so the station reading
+            # gates, and the fixture reading is still taken and still logged, as
+            # the occluded control that made the case for a second pair.
+            gate_verdict, gate = ((cell.qc_station_verdict, "station")
+                                  if getattr(cell, "qc_station", None) is not None
+                                  else (cam_verdict, "fixture"))
+            cell.qc_pass = (gate_verdict == "ACCEPT") and not getattr(cell, "qc_jam", False)
             cell.qc_meas = meas
+            cell.qc_gate = gate
             cell.event("S5", "CAMERA QC verify",
+                       gate=gate, gate_result=gate_verdict,
                        cam_align_mm=meas["align_err_mm"], cam_depth_mm=meas["depth_mm_est"],
                        cam_peg_present=meas["peg_present"], cam_result=cam_verdict,
                        oracle_depth_mm=depth * 1000, oracle_align_mm=err_xy * 1000,

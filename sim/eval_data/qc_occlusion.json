@@ -13,10 +13,58 @@
       "align_max": 6.0,
       "tilt_max": 8.0
     },
+    "pairs": {
+      "fixture": {
+        "top": "qc_top",
+        "top_cam_z": 0.6,
+        "top_fovy": 42.0,
+        "side": "qc_side",
+        "side_standoff": 0.32,
+        "side_fovy": 38.0
+      },
+      "station": {
+        "top": "qc_top",
+        "top_cam_z": 0.6,
+        "top_fovy": 42.0,
+        "side": "qc_station_side",
+        "side_standoff": 0.32,
+        "side_fovy": 38.0
+      }
+    },
+    "station_camera": {
+      "scene_head_line": "<camera name=\"qc_station_side\" pos=\"0.040 0.092 0.0549\" xyaxes=\"1 0 0 0 0 1\" fovy=\"38\"/>",
+      "pos_m": [
+        0.04,
+        0.092,
+        0.0549
+      ],
+      "fovy_deg": 38.0,
+      "aimed_at": {
+        "station_xy_m": [
+          0.04,
+          0.412
+        ],
+        "blk_top_z_m": 0.0549,
+        "standoff_m": 0.32
+      },
+      "sequencer": {
+        "station_xy_m": [
+          0.04,
+          0.412
+        ],
+        "table_z_m": 0.0299,
+        "base_height_m": 0.025
+      }
+    },
+    "stub_band": {
+      "peg_len_mm": 40.0,
+      "px": 131,
+      "derivation": "ceil(peg_len_mm / mm_per_px.side) \u2014 qc.stub_band_px(); an exposed stub cannot be taller than the peg. It was a flat 70 px, which capped depth_mm_est at 16.58 mm and put a dead band above the 15.0 mm reject line"
+    },
     "masks": {
       "top_peg": "qc._yellow(top) & ROI \u2014 strict lit peg-top yellow",
       "top_rim": "qc._cyan(top) & ROI \u2014 pocket block, incl. the rim ring",
-      "side_stub_band": "qc._peg_colors(side) & stub band \u2014 broad yellow|orange in the 70 rows above the block's top edge, the pixels depth_mm_est comes from",
+      "side_stub_band": "qc._peg_colors(side) & stub band \u2014 broad yellow|orange in the stub_band.px rows above the block's top edge, the pixels depth_mm_est comes from",
       "side_rim": "qc._cyan(side) & ROI"
     },
     "measured_by": "sequencer S5 \u2014 qc.measure() masks, not a re-render"
@@ -47,11 +95,20 @@
         "top": 0.48308,
         "side": 0.30607
       },
+      "stub_band_px": 131,
+      "pair": "fixture",
       "unit_at_qc_m": [
         -0.00311,
         0.4115,
         0.12195
       ],
+      "station": null,
+      "station_none_because": "the weld path never has the unit out of a hand: it leaves one grip only onto a weld, so no instant exists in which to inspect it in place",
+      "gate": {
+        "pair": "fixture",
+        "verdict": "ACCEPT",
+        "qc_pass": true
+      },
       "cycle_time_s": 42.584
     },
     "jaws": {
@@ -79,12 +136,52 @@
         "top": 0.4822,
         "side": 0.30607
       },
+      "stub_band_px": 131,
+      "pair": "fixture",
       "unit_at_qc_m": [
         0.00459,
         0.41158,
         0.12277
       ],
-      "cycle_time_s": 82.224
+      "station": {
+        "pair": "station",
+        "when": "STATION QC verify (in-situ, both hands clear)",
+        "px": {
+          "top_peg": 956,
+          "top_rim": 5788,
+          "side_stub_band": 3860,
+          "side_rim": 17677
+        },
+        "camera": {
+          "peg_present": true,
+          "align_err_mm": 1.1184,
+          "depth_mm_est": 17.7994,
+          "verdict": "ACCEPT"
+        },
+        "oracle": {
+          "depth_mm": 22.1106,
+          "align_mm": 1.0287,
+          "tilt_deg": 0.0058
+        },
+        "mm_per_px": {
+          "top": 0.58127,
+          "side": 0.30607
+        },
+        "stub_band_px": 131,
+        "unit_at_station_m": [
+          0.03653,
+          0.41482,
+          0.02986
+        ],
+        "blk_top_aim_err_mm": 0.04
+      },
+      "station_none_because": null,
+      "gate": {
+        "pair": "station",
+        "verdict": "ACCEPT",
+        "qc_pass": true
+      },
+      "cycle_time_s": 75.84
     }
   },
   "summary": {
@@ -100,6 +197,22 @@
     "verdict": {
       "weld": "ACCEPT",
       "jaws": "REJECT"
+    },
+    "gate": {
+      "weld": "fixture",
+      "jaws": "station"
+    },
+    "gate_verdict": {
+      "weld": "ACCEPT",
+      "jaws": "ACCEPT"
+    },
+    "station_verdict": {
+      "weld": null,
+      "jaws": "ACCEPT"
+    },
+    "cycle_time_s": {
+      "weld": 42.584,
+      "jaws": 75.84
     },
     "unit_pose_delta_mm": 7.74,
     "unit_pose_delta_xyz_mm": [

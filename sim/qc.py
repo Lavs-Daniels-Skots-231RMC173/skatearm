@@ -1,9 +1,9 @@
 """QC camera pipeline (v1, classical CV — no learned models).
 
-Measures the assembled unit at the verify station from two fixed cameras:
+Measures the assembled unit from a PAIR of fixed cameras:
 
-- qc_top  (overhead): peg presence + peg<->pocket ALIGNMENT in mm
-- qc_side (lateral):  exposed peg height -> INSERTION DEPTH estimate + coarse tilt
+- overhead: peg presence + peg<->pocket ALIGNMENT in mm
+- lateral:  exposed peg height -> INSERTION DEPTH estimate + coarse tilt
 
 Segmentation is color-threshold based (flat-shaded sim parts):
   peg top   ~ (255, 245, 80)  -> "yellow" mask
@@ -12,13 +12,45 @@ Segmentation is color-threshold based (flat-shaded sim parts):
 
 mm-per-px comes from camera geometry (fovy + standoff), no checkerboard needed
 in sim; the real cell will calibrate the usual way.
+
+TWO PAIRS, ONE PIPELINE. ``FIXTURE_PAIR`` is the gate this file shipped with:
+it inspects the unit held up at the fixture pose, and every committed camera-QC
+figure was measured through it, so it stays ``measure()``'s default and nothing
+about it moves. ``STATION_PAIR`` inspects the assembly station on the table
+instead — the same overhead camera, which sees both, plus a second lateral
+camera aimed at the station. That is the "second camera pair, not a
+re-calibration" the weld-free cell was documented as needing: a cell that
+releases the unit onto the table cannot present it to the fixture, so the optics
+go to the part. Only *which* cameras are read and *from how far* is per-pair;
+masks, ROI, band derivation and thresholds are shared, so a verdict from one
+pair means the same thing as a verdict from the other.
 """
+from collections import namedtuple
+
 import mujoco
 import numpy as np
 
 PEG_LEN_MM = 40.0
 TOP_CAM_Z, TOP_FOVY = 0.60, 42.0
 SIDE_CAM_X, SIDE_FOVY = 0.32, 38.0
+# The station's lateral camera is deliberately THE SAME LENS AT THE SAME
+# STANDOFF as qc_side, mounted along -y instead of +x. Not a convenience: equal
+# standoff and equal fovy give the two lateral views the same mm-per-px, so
+# their depth estimates are directly comparable instead of merely both being
+# "a side view". (-y rather than +x because the reject bin blocks the +x
+# approach at the station — measured: 0 stub px, 0 rim px from there.)
+STATION_CAM_Y, STATION_FOVY = SIDE_CAM_X, SIDE_FOVY
+
+CameraPair = namedtuple(
+    "CameraPair", "name top top_cam_z top_fovy side side_standoff side_fovy")
+
+#: the shipped gate — the unit is carried to the cameras at the fixture pose
+FIXTURE_PAIR = CameraPair("fixture", "qc_top", TOP_CAM_Z, TOP_FOVY,
+                          "qc_side", SIDE_CAM_X, SIDE_FOVY)
+#: in-situ optics aimed at the assembly station, for cells that cannot present
+#: the unit to the fixture at all
+STATION_PAIR = CameraPair("station", "qc_top", TOP_CAM_Z, TOP_FOVY,
+                          "qc_station_side", STATION_CAM_Y, STATION_FOVY)
 
 
 def _yellow(img):
@@ -50,18 +82,41 @@ def _peg_colors(img):
     return yellow | orange
 
 
-def measure(renderer, d, unit_z=0.135, roi_half=150):
-    """Render both QC cameras and return measurements.
+def stub_band_px(mm_per_px_side):
+    """How many rows above the block's top edge may hold exposed peg.
 
-    Industrial-style FIXED INSPECTION WINDOW: the unit is always presented at
-    the fixture pose (image center), so analysis is restricted to a centered
-    ROI — specular highlights on the arms and the wooden table outside the
-    window cannot poison the segmentation (they did: a glint on the wrist
-    dragged the 'peg centroid' 148 mm away in the first attempt)."""
+    An exposed stub cannot be taller than the peg, so the search window is the
+    peg's own length in pixels. This was the constant 70, and that constant was
+    a silent ceiling: 70 px is 21.4 mm of peg, so the lowest depth the pipeline
+    could ever report was PEG_LEN_MM - 21.4 - 2.0 = 16.58 mm — while
+    ``verdict()``'s depth_min is 15.0. A 1.58 mm DEAD BAND, in which no unit,
+    however badly seated, could drive depth_mm_est below the threshold that
+    exists to reject it: walking the peg out of the bore, the estimate stopped
+    at 16.58 mm while the oracle kept falling to 14.11 mm. Deriving the window
+    from PEG_LEN_MM removes the ceiling instead of relocating it. Measured on
+    both pairs, both cell paths, and at the adversarial pose where a gripper
+    hangs directly over the unit: every seated reading is identical to the
+    70-row one (stub px, rim px and depth alike), so the wider window changes
+    nothing except the defects the old one clipped.
+    """
+    return int(np.ceil(PEG_LEN_MM / mm_per_px_side))
+
+
+def measure(renderer, d, unit_z=0.135, roi_half=150, pair=FIXTURE_PAIR):
+    """Render one camera PAIR and return measurements.
+
+    Industrial-style FIXED INSPECTION WINDOW: the unit is always presented at a
+    pose the pair is aimed at (image center), so analysis is restricted to a
+    centered ROI — specular highlights on the arms and the wooden table outside
+    the window cannot poison the segmentation (they did: a glint on the wrist
+    dragged the 'peg centroid' 148 mm away in the first attempt).
+
+    ``pair`` defaults to FIXTURE_PAIR, so every existing caller and every
+    committed figure is unaffected."""
     out = {}
-    renderer.update_scene(d, camera="qc_top")
+    renderer.update_scene(d, camera=pair.top)
     top = renderer.render().copy()
-    renderer.update_scene(d, camera="qc_side")
+    renderer.update_scene(d, camera=pair.side)
     side = renderer.render().copy()
     h, w = top.shape[:2]
     cx, cy = w // 2, h // 2
@@ -85,7 +140,7 @@ def measure(renderer, d, unit_z=0.135, roi_half=150):
         c2 = _centroid(broad)
         if c2:
             peg_c = c2
-    mpp_t = mm_per_px(TOP_CAM_Z - (unit_z + 0.025), TOP_FOVY, h)
+    mpp_t = mm_per_px(pair.top_cam_z - (unit_z + 0.025), pair.top_fovy, h)
     blk_c = None
     if peg_c:
         # ALIGNMENT REFERENCE = the POCKET RIM, not the whole block: the wrist
@@ -104,14 +159,15 @@ def measure(renderer, d, unit_z=0.135, roi_half=150):
     # edge (the orange wrist link and the table camouflage defeat any global
     # search — measured) ---
     cs_ = _cyan(side) & roi
-    mpp_s = mm_per_px(SIDE_CAM_X, SIDE_FOVY, h)
+    mpp_s = mm_per_px(pair.side_standoff, pair.side_fovy, h)
+    band_px = stub_band_px(mpp_s)
     ys_ = np.zeros_like(cs_)
     if cs_.sum() > 100:
         blk_rows = np.nonzero(cs_.any(axis=1))[0]
         blk_cols = np.nonzero(cs_.any(axis=0))[0]
         top_row = blk_rows.min()
         band = np.zeros_like(cs_)
-        band[max(0, top_row - 70):top_row + 2, blk_cols.min():blk_cols.max() + 1] = True
+        band[max(0, top_row - band_px):top_row + 2, blk_cols.min():blk_cols.max() + 1] = True
         ys_ = _peg_colors(side) & band
         if ys_.sum() > 25:
             peg_rows = np.nonzero(ys_.any(axis=1))[0]
@@ -131,6 +187,8 @@ def measure(renderer, d, unit_z=0.135, roi_half=150):
     out["_masks"] = {"top_peg": ytop, "top_blk": ctop, "side_peg": ys_, "side_blk": cs_}
     out["_centroids"] = {"peg": peg_c, "blk": blk_c}
     out["_mpp"] = {"top": mpp_t, "side": mpp_s}
+    out["_pair"] = pair
+    out["_band_px"] = band_px
     return out
 
 

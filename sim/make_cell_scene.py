@@ -13,8 +13,16 @@ CI) stay on the square v1 stand-in.
 actuated parallel jaws on BOTH wrists, so the whole cycle grips and releases for
 real rather than through the `grasp_right` / `grasp_left` welds. Both equalities
 are still emitted — the default model shares this builder and needs them — and
-the gripper path simply never engages either. Also OPT-IN: the default model and
-every existing test are untouched, byte for byte.
+the gripper path simply never engages either. Also OPT-IN: passing --gripper
+leaves the default model and every existing test untouched, byte for byte.
+
+THREE fixed QC cameras go into both scenes, for the same reason both equalities
+do: one builder. `qc_top` + `qc_side` are the fixture pair the camera pipeline
+shipped with — the unit is carried up to them and inspected in mid air.
+`qc_station_side` looks at the assembly station on the table instead, which is
+the only place the weld-free cell ever has the finished unit in the clear, and
+the weld path never reads it. Cameras carry no dynamics, so the default model
+still steps identically and every number measured from it still reproduces.
 
     python make_cell_scene.py /path/to/skate_teleop/skt_v3 [--round-bore] [--gripper]
 """
@@ -25,16 +33,30 @@ import xml.etree.ElementTree as ET
 
 TABLE = {"pos": (0, 0.50, 0.0), "half": (0.45, 0.12, 0.03)}  # top z=0.03, front edge y=0.38
 
+# The ASSEMBLY STATION: where the weld-free cycle sets the base down, inserts,
+# and leaves the finished unit standing on the table. These three numbers exist
+# only to aim `qc_station_side`, and they are restated here rather than
+# imported because sequencer.py needs MuJoCo and this builder deliberately does
+# not (the hardware-free CI job imports this module). They are not left on
+# trust: sim/eval_qc_occlusion.py asserts them against sequencer.STATION and
+# sequencer.TABLE_Z and writes both into the artefact, and the hardware-free
+# guard parses the camera back out of SCENE_HEAD and checks it against that
+# artefact. A drift is a CI failure, not a surprise on the bench.
+STATION_XY = (0.040, 0.412)          # == sequencer.STATION
+STATION_BLK_TOP = 0.0549             # == sequencer.TABLE_Z + the base's 25 mm height
+STATION_CAM_STANDOFF = 0.320         # == qc.SIDE_CAM_X: same lens, same distance
+
 SCENE_HEAD = """
     <geom name="floor" type="plane" pos="0 0 -1.05" size="4 4 0.1" material="grid"/>
     <light pos="1.5 1.5 2" dir="-0.4 -0.4 -1" diffuse="0.6 0.6 0.6"/>
     <light pos="-1 2 1.5" dir="0.3 -0.6 -1" diffuse="0.3 0.3 0.3"/>
     <camera name="qc_top" pos="0 0.41 0.60" zaxis="0 0 1" fovy="42"/>
     <camera name="qc_side" pos="0.32 0.41 0.13" xyaxes="0 1 0 0 0 1" fovy="38"/>
+    <camera name="qc_station_side" pos="%.3f %.3f %.4f" xyaxes="1 0 0 0 0 1" fovy="38"/>
     <geom name="table" type="box" pos="0 0.50 0" size="0.45 0.12 0.03" rgba="0.55 0.42 0.28 1" friction="0.8 0.005 0.0001"/>
     <geom name="bin_accept" type="box" pos="-0.24 0.41 0.035" size="0.05 0.05 0.005" rgba="0.2 0.7 0.3 1"/>
     <geom name="bin_reject" type="box" pos="0.24 0.41 0.035" size="0.05 0.05 0.005" rgba="0.8 0.25 0.2 1"/>
-"""
+""" % (STATION_XY[0], STATION_XY[1] - STATION_CAM_STANDOFF, STATION_BLK_TOP)
 
 PEG = """
     <body name="peg" pos="0.12 0.44 0.0501">

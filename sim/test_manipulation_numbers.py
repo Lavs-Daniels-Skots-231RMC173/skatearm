@@ -681,12 +681,14 @@ def test_qc_occlusion_is_the_cell_and_not_the_measurement():
     _states(MAN, r"Full cycle [\d.]+ s against the weld path's ([\d.]+) s",
             w["cycle_time_s"])
 
-    # The jaw-path comparison figure, 75.84 s, is the one number in this file with
-    # NO committed artefact behind it: it comes from sim/test_cell_gripper.py,
-    # which needs MuJoCo and so cannot run in the hardware-free job. It can still
-    # be kept CONSISTENT, which is the drift that actually happens -- so take
-    # MANIPULATION.md's 2 dp as the published value, make every rounder copy agree
-    # with it, and use it as the bound below instead of a literal typed in here.
+    # The jaw-path comparison figure, 75.84 s, HAS an artefact behind it now, and
+    # is the reason this test changed. It had none for as long as the cameras
+    # could not see the weld-free unit: the eval's own S6 took the reject detour
+    # and ran long, so the only reading of that takt came from
+    # sim/test_cell_gripper.py, off the oracle, in the model-gated job. The
+    # station pair closed that hole -- see the test below -- so the camera gate
+    # now agrees with the oracle gate and the eval runs the same S6 branch. Take
+    # MANIPULATION.md's 2 dp as the published value and hold every copy to it.
     gripper_s = float(_quoted(MAN, r"Full cycle ([\d.]+) s against the weld path's"))
     _published(gripper_s, "s", (
         (MAN, r"Full cycle ([\d.]+) s against the weld path's"),
@@ -699,14 +701,17 @@ def test_qc_occlusion_is_the_cell_and_not_the_measurement():
         (RMAP, r"([\d.]+) s against the weld path's"),
         ("sim/demo_cell_cycle.py", r"Measured ([\d.]+) s against the weld path's"),
         ("sim/demo_cell_cycle.py", r"measured jaw cycle ([\d.]+) s"),
-        ("sim/eval_qc_occlusion.py", r"runs LONGER than the ([\d.]+) s takt"),
+        ("sim/eval_qc_occlusion.py", r"lands on the same ([\d.]+) s takt"),
         ("sim/test_cell_gripper.py", r"the weld-free cycle measures ([\d.]+) s")))
 
-    # the jaws column runs LONGER than that published figure, and must: a camera
-    # REJECT sends S6 to the far reject bin, while the 75.84 s is the oracle-gated
-    # ACCEPT branch sim/test_cell_gripper.py runs with no renderer attached. Same
-    # cycle, different S6 branch -- which branch it takes is what this eval measures.
-    assert j["cycle_time_s"] > gripper_s, (j["cycle_time_s"], gripper_s)
+    # and the jaws column lands ON it. S6 carries an ACCEPT to the near bin and a
+    # REJECT across the whole robot to the far one, so the takt is a readout of
+    # the gate's verdict: this equality is the statement that the camera-gated
+    # cycle and the oracle-gated one took the same branch. Two gates that share no
+    # code -- one reads pixels, the other reads the simulator's own pose -- and
+    # one number to a hundredth. It is also the alarm: if the station pair ever
+    # stops seeing the part, S6 detours and this is the assert that goes red.
+    assert round(j["cycle_time_s"], 2) == gripper_s, (j["cycle_time_s"], gripper_s)
 
     # three documents publish the GAP between the two cycles rather than either
     # end of it, so derive the gap instead of letting a subtraction be typed
@@ -752,6 +757,177 @@ def test_qc_occlusion_is_the_cell_and_not_the_measurement():
         (IDX, r"friction alone with ([\d.]+) mm of slip"),
         (SRM, r"\(S3/S4, ([\d.]+) mm slip over the carry\)"),
         ("sim/test_cell_gripper.py", r"Measured drift is ([\d.]+) mm")))
+
+
+# ------------------------------------------------ M4 the in-situ station gate
+
+def _np_const(rel, name):
+    """A module-level ``np.array([...])`` constant, off the file's AST.
+
+    Same reason as ``_const`` further down -- sim/sequencer.py imports mujoco and
+    numpy, so this job reads that file rather than runs it -- and one node
+    deeper, because the value is wrapped in a call there is no numpy here to
+    make."""
+    for n in ast.parse(_src(rel)).body:
+        if isinstance(n, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == name for t in n.targets):
+            v = n.value
+            return ast.literal_eval(v.args[0] if isinstance(v, ast.Call) else v)
+    raise AssertionError(f"{rel} no longer defines {name}")
+
+
+def test_qc_station_gate_sees_the_unit_the_fixture_pair_cannot():
+    """README's named repair, taken up: "a second camera pair, not a
+    re-calibration".
+
+    The occlusion finding above is unchanged and still pinned -- the fixture pair
+    still reads 0 peg px on the weld-free cell, and that is still the honest
+    measurement of what the conversion cost. What changed is that the weld-free
+    cycle is no longer GATED on that blind reading. Its S5 takes a second
+    measurement at the assembly station, in the instant between the right wrist
+    retracting and the left hand re-gripping, while the unit stands free on the
+    table with both hands off it. A cell with a weld left in it cannot have that
+    instant -- it lets go of the part only onto the weld -- so the second gate is
+    a property of the conversion rather than a patch bolted on after it.
+
+    Everything below is re-derived: the verdicts from qc.verdict's own
+    thresholds, the stub band from the peg's length and the side lens's scale,
+    and the camera's aim out of sim/make_cell_scene.py's own SCENE_HEAD, which
+    this job can import because the scene builder is pure stdlib."""
+    d = ed("qc_occlusion.json")
+    w, j = d["paths"]["weld"], d["paths"]["jaws"]
+    t = d["qc"]["accept_thresholds"]
+    st = j["station"]
+
+    def ok(m):
+        return bool(m["peg_present"]
+                    and m["align_err_mm"] is not None
+                    and m["align_err_mm"] <= t["align_max"]
+                    and m["depth_mm_est"] is not None
+                    and m["depth_mm_est"] >= t["depth_min"])
+
+    # WHICH PATH CAN BE INSPECTED IN PLACE is a fact about the cell, so the
+    # artefact carries the reason rather than a bare null nobody has to justify.
+    assert w["station"] is None and j["station_none_because"] is None
+    assert "never has the unit out of a hand" in w["station_none_because"]
+    assert st["when"].startswith("STATION QC verify")
+    assert "both hands clear" in st["when"]
+
+    # THE GATE. Each cell decides on the pair that can actually see its unit, and
+    # both verdicts are re-derived here from the thresholds, not read off a field.
+    assert (w["gate"]["pair"], j["gate"]["pair"]) == ("fixture", "station")
+    assert w["gate"]["verdict"] == "ACCEPT" and ok(w["camera"])
+    assert j["gate"]["verdict"] == "ACCEPT" and ok(st["camera"])
+    assert w["gate"]["qc_pass"] is j["gate"]["qc_pass"] is True
+    # the fixture pair still rejects that same unit -- this gate exists BECAUSE
+    # of the finding above, it does not walk it back
+    assert j["camera"]["verdict"] == "REJECT" and not ok(j["camera"])
+    assert d["summary"]["gate"] == {"weld": "fixture", "jaws": "station"}
+    assert d["summary"]["station_verdict"] == {"weld": None, "jaws": "ACCEPT"}
+    # and the oracle agrees at that same instant, off the simulator's own pose:
+    # two gates that share no code, one part, one verdict
+    o = st["oracle"]
+    assert (o["depth_mm"] >= t["depth_min"] and o["align_mm"] <= t["align_max"]
+            and o["tilt_deg"] <= t["tilt_max"]), o
+    assert abs(o["depth_mm"] - j["oracle"]["depth_mm"]) < 0.05      # same seated unit
+
+    # THE PIXELS BEHIND IT. Same unit, same masks, same ROI, one lens moved.
+    assert j["px"]["top_peg"] == 0 and st["px"]["top_peg"] == 956
+    assert st["px"]["top_rim"] > 6 * j["px"]["top_rim"]             # 5788 vs 827
+    assert st["px"]["side_stub_band"] > j["px"]["side_stub_band"]
+    _published(st["px"]["top_peg"], "peg", (
+        (IDX, r"the station pair sees (\d+) peg pixels"),
+        (RM, r"the station pair sees (\d+) peg px"),
+        (SRM, r"the station pair gives (\d+) peg px"),
+        (MAN, r"the station pair shows (\d+) peg px")))
+    _published(st["camera"]["align_err_mm"], "mm", (
+        (MAN, r"alignment ([\d.]+) mm and depth [\d.]+ mm"),))
+    _published(st["camera"]["depth_mm_est"], "mm", (
+        (MAN, r"alignment [\d.]+ mm and depth ([\d.]+) mm"),))
+
+    # ONE PIPELINE, TWO PAIRS. The station pair is the fixture pair with the
+    # lateral lens moved, not a second measurement system: same overhead camera,
+    # same field of view, same standoff. That is what makes the two columns
+    # comparable at all, and what makes a verdict from one mean what a verdict
+    # from the other means.
+    pairs = d["qc"]["pairs"]
+    assert set(pairs) == {"fixture", "station"}
+    f, s = pairs["fixture"], pairs["station"]
+    assert f["top"] == s["top"] == "qc_top"
+    assert f["side"] == "qc_side" and s["side"] == "qc_station_side"
+    for k in ("top_cam_z", "top_fovy", "side_standoff", "side_fovy"):
+        assert f[k] == s[k], (k, f[k], s[k])
+    assert (w["pair"], j["pair"]) == ("fixture", "fixture")   # the occlusion column
+    assert st["pair"] == "station"
+    assert w["mm_per_px"]["side"] == st["mm_per_px"]["side"]   # equal lens, equal scale
+
+    # WHERE THE SECOND LENS IS AIMED, checked against the file that aims it.
+    # sim/make_cell_scene.py may not import sim/sequencer.py -- the sequencer
+    # needs MuJoCo and the builder runs in THIS job -- so the station's position,
+    # the block's top face and the standoff are restated in the builder. Restated
+    # is fine; unchecked is not. The builder is imported, the sequencer is read
+    # off its AST, and the camera line itself is parsed back out of SCENE_HEAD
+    # and compared with the one the eval recorded when it had a model loaded.
+    import make_cell_scene as mcs
+    cam = d["qc"]["station_camera"]
+    line = re.search(r'<camera name="%s".*?/>' % s["side"], mcs.SCENE_HEAD).group(0)
+    assert line == cam["scene_head_line"], (line, cam["scene_head_line"])
+    pos = [float(v) for v in re.search(r'pos="([^"]+)"', line).group(1).split()]
+    assert pos == cam["pos_m"]
+    assert float(re.search(r'fovy="([^"]+)"', line).group(1)) == \
+        cam["fovy_deg"] == s["side_fovy"]
+    # on the station's own x, one standoff back along -y, level with the block top
+    assert pos[0] == mcs.STATION_XY[0]
+    assert round(mcs.STATION_XY[1] - pos[1], 6) == mcs.STATION_CAM_STANDOFF
+    assert pos[2] == mcs.STATION_BLK_TOP
+    assert list(mcs.STATION_XY) == cam["aimed_at"]["station_xy_m"]
+    assert mcs.STATION_BLK_TOP == cam["aimed_at"]["blk_top_z_m"]
+    assert mcs.STATION_CAM_STANDOFF == cam["aimed_at"]["standoff_m"] == s["side_standoff"]
+    # the two files that must not drift apart: one imported, one parsed
+    assert list(_np_const("sim/sequencer.py", "STATION")) == list(mcs.STATION_XY)
+    assert cam["sequencer"]["station_xy_m"] == list(mcs.STATION_XY)
+    assert cam["sequencer"]["table_z_m"] == _const("sim/sequencer.py", "TABLE_Z")
+    assert round(mcs.STATION_BLK_TOP - cam["sequencer"]["table_z_m"], 6) == \
+        cam["sequencer"]["base_height_m"] == 0.025          # the base's own 25 mm
+    # the aim is a claim about a real part, so it is checked against where the
+    # part really stood -- measured off the compiled model, reported in mm
+    assert abs(st["blk_top_aim_err_mm"]) < 0.5, st["blk_top_aim_err_mm"]
+
+    # WHAT THE DEFAULT CELL PAID FOR IT: one camera element, and nothing else.
+    # The station lens goes into the head BOTH scenes share, so the default
+    # skt_v3_cell.xml is no longer byte-identical to the one M4 shipped -- it
+    # gains this one line, and the docs say so in exactly those words. The claim
+    # they make instead is structural, so it is checked structurally, here in the
+    # job that has no model to load: strike the camera out of SCENE_HEAD and not
+    # a trace of the station is left behind, and the struck line is a <camera>,
+    # which carries no dynamics -- no body, geom, joint, weld or site rides in
+    # with it. That is the whole difference, and it is why the sizes, the qpos
+    # and every number ever measured off the default cell still reproduce.
+    assert mcs.SCENE_HEAD.count(s["side"]) == 1
+    assert line.startswith("<camera ") and line.endswith("/>")
+    for tag in ("<body", "<geom", "<joint", "<equality", "<weld", "<site"):
+        assert tag not in line, tag
+    assert "station" not in mcs.SCENE_HEAD.replace(line, "").lower()
+
+    # THE STUB BAND, derived rather than declared. qc.py took a flat 70 rows above
+    # the block's top edge as the exposed-stub window, and that constant was a
+    # ceiling on how BAD a reading could get: it clipped the exposed height, which
+    # floored depth_mm_est above the very threshold that exists to reject. Derive
+    # it from the peg and the side lens instead, and the floor goes under the line.
+    band = d["qc"]["stub_band"]
+    mpp_side = w["mm_per_px"]["side"]
+    assert band["px"] == math.ceil(band["peg_len_mm"] / mpp_side) == 131
+    assert band["px"] == w["stub_band_px"] == j["stub_band_px"] == st["stub_band_px"]
+    floor_mm = band["peg_len_mm"] - band["px"] * mpp_side - 2.0   # qc.measure()'s form
+    assert floor_mm < t["depth_min"], floor_mm
+    dead = band["peg_len_mm"] - 70 * mpp_side - 2.0               # what 70 rows gave
+    assert dead > t["depth_min"] and round(dead, 2) == 16.58, dead
+    _states("sim/qc.py", r"could ever report was PEG_LEN_MM - [\d.]+ - [\d.]+ = ([\d.]+) mm",
+            dead)
+    _states("sim/qc.py", r"A ([\d.]+) mm DEAD BAND", dead - t["depth_min"])
+    # every reading in the artefact was taken through the derived window
+    assert d["qc"]["masks"]["side_stub_band"].startswith("qc._peg_colors")
+    assert "stub_band.px rows" in d["qc"]["masks"]["side_stub_band"]
 
 
 # ------------------------------------------------------------------- benchmark
