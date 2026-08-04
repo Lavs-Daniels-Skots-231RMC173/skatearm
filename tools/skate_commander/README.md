@@ -159,7 +159,11 @@ The cockpit is structured as a NVIDIA-Isaac-Sim-style workstation: a **menu bar*
   never re-planned (the **ROUTING** chip shows while a route runs)
 * **Python programs** — in-browser editor over a sandboxed `rbt` API
   (`movej`, `pose`, `movel`, `moveto`, `home`, `gripper`, `waypoint`, `wait`,
-  `tcp`, `q`, `status`; `print` goes to the cockpit log). **Click-to-Step** executes one
+  `tcp`, `tcp_rpy`, `q`, `status`; `print` goes to the cockpit log). `moveto`
+  takes a world point, or a point *and* a wrist orientation (roll/pitch/yaw in
+  degrees, the same fixed-axis convention as the URDF and the drag-gizmo) that
+  it holds on arrival; `tcp_rpy` reads that orientation back, so a pose jogged
+  by hand can be typed straight into a program. **Click-to-Step** executes one
   motion at a time, showing the next command and its source line; RUN
   releases the program. Every motion uses the same bridge paths as the UI —
   limits, collision guard, E-STOP — and any manual input kills the program.

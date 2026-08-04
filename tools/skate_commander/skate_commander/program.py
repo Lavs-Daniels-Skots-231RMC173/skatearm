@@ -17,11 +17,12 @@ API (joints in degrees, cartesian in millimeters, world axes):
     rbt.pose({joint: deg, ...})  several joints as ONE coordinated move
     rbt.movel(arm, dx=, dy=, dz=)  glide the TCP; auto-stops when blocked
     rbt.moveto(arm, x, y, z)     glide the TCP to an absolute world point (mm)
+    rbt.moveto(arm, x, y, z, roll, pitch, yaw)   ... and a wrist orientation
     rbt.home()                   glide to the documented safe pose
     rbt.gripper(arm, deg)        open/close one gripper
     rbt.waypoint(i_or_name)      glide to a recorded sequencer pose
     rbt.wait(seconds)            dwell
-    rbt.tcp(arm) / rbt.q() / rbt.status()   readouts
+    rbt.tcp(arm) / rbt.tcp_rpy(arm) / rbt.q() / rbt.status()   readouts
     rbt.ok() / rbt.blocked() / rbt.contact() / rbt.near(arm,x,y,z)  conditions
 """
 
@@ -36,6 +37,8 @@ import time
 import traceback
 
 from skate_ros2 import names
+
+from .kinematics import R_to_rpy, rpy_to_R
 
 PROGRAM_FILE = "<skate program>"
 LOG_MAX = 300
@@ -220,6 +223,19 @@ class RobotAPI:
         p = br.kin[arm].fk(br.targ)
         return tuple(round(float(v) * 1000, 1) for v in p)
 
+    def tcp_rpy(self, arm="right"):
+        """Current commanded wrist orientation as (roll, pitch, yaw) degrees.
+
+        The companion to :meth:`tcp`, and the readout ``moveto`` was missing:
+        the three numbers this returns are exactly the three ``moveto`` takes,
+        so a pose can be jogged by hand, read off here, and pasted into a
+        program that reproduces it."""
+        br = self._r.bridge
+        if arm not in br.kin or br.targ is None:
+            return None
+        _, R = br.kin[arm].fk_pose(br.targ)
+        return tuple(round(float(math.degrees(v)), 2) for v in R_to_rpy(R))
+
     def status(self):
         return self._r.bridge.snapshot()
 
@@ -300,14 +316,37 @@ class RobotAPI:
         self._r._wait_until(lambda: br.ik_targets.get(arm) is None, timeout)
         return self.tcp(arm)
 
-    def moveto(self, arm, x, y, z, timeout=15.0):
-        """Glide the TCP to an ABSOLUTE world point (mm). Auto-stops on arrival
-        or when blocked / out of reach (same IK path as the drag-gizmo)."""
-        if arm not in self._r.bridge.kin:
-            raise ValueError("arm must be 'left' or 'right'")
-        self._r._gate(f"moveto({arm!r}, {x:g}, {y:g}, {z:g})")
+    def moveto(self, arm, x, y, z, roll=None, pitch=None, yaw=None,
+               timeout=15.0):
+        """Glide the TCP to an ABSOLUTE world point (mm), optionally holding a
+        wrist orientation as well (roll/pitch/yaw in degrees). Auto-stops on
+        arrival or when blocked / out of reach (same IK path as the gizmo).
+
+        The angles are the same fixed-axis convention as everything else in
+        the cockpit -- the URDF's joint frames, the viewer's rotate gizmo, and
+        what ``tcp_rpy`` hands back -- so a pose read off the arm can be typed
+        straight back in here.
+
+        Orientation is all three angles or none. The solver is handed a full
+        pose task, not a partial one, so there is no way to pin roll and leave
+        yaw free; asking for two of them is a mistake rather than a shorthand.
+        With no angles it is the classic free-wrist move, unchanged.
+
+        Returns the TCP position reached (world millimeters), or False if the
+        bridge would not take the target at all."""
         br = self._r.bridge
-        br.set_ik_target(arm, [x / 1000.0, y / 1000.0, z / 1000.0], auto=True)
+        if arm not in br.kin:
+            raise ValueError("arm must be 'left' or 'right'")
+        rpy = (roll, pitch, yaw)
+        n = sum(v is not None for v in rpy)
+        if n not in (0, 3):
+            raise ValueError("moveto orientation takes roll, pitch AND yaw, "
+                             "or none of them")
+        R = rpy_to_R(*(math.radians(float(v)) for v in rpy)) if n else None
+        ori = "" if R is None else f", {roll:g}, {pitch:g}, {yaw:g}"
+        self._r._gate(f"moveto({arm!r}, {x:g}, {y:g}, {z:g}{ori})")
+        br.set_ik_target(arm, [x / 1000.0, y / 1000.0, z / 1000.0],
+                         auto=True, rot=R)
         if br.ik_targets.get(arm) is None:
             self._r.emit(f"! moveto {arm}: rejected (not armed / estopped?)")
             return False

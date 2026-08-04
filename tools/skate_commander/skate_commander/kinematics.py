@@ -40,8 +40,42 @@ def _rz(a):
     return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
 
 
-def _rpy(r, p, y):                      # URDF fixed-axis == intrinsic ZYX
-    return _rz(y) @ _ry(p) @ _rx(r)
+def rpy_to_R(roll, pitch, yaw):
+    """Fixed-axis roll-pitch-yaw (radians, world axes) -> 3x3 rotation.
+
+    The URDF convention -- ``rz(yaw) @ ry(pitch) @ rx(roll)``, fixed-axis XYZ,
+    which is the same rotation as intrinsic ZYX. Every joint frame in the tree
+    is built from it, the browser viewer's ``rpyToQuat`` is its javascript
+    twin, and it is what an orientation handed to the program API means, so
+    the whole cockpit has exactly one convention to be wrong about.
+    """
+    return _rz(yaw) @ _ry(pitch) @ _rx(roll)
+
+
+def R_to_rpy(R):
+    """Inverse of :func:`rpy_to_R`: 3x3 rotation -> (roll, pitch, yaw) rad.
+
+    Pitch comes back in [-pi/2, +pi/2] -- the branch without a half turn in
+    it -- so a pose read off the arm can be typed straight back in and mean
+    the same wrist. Every angle is an arctan2 of matrix entries rather than
+    an arcsin of one of them: a wrist pointing near straight down, which is
+    how the left tool now approaches the base, puts that one entry within an
+    ulp of unity, where arcsin has lost most of its digits.
+
+    At the two gimbal-lock poles roll and yaw stop being separable -- only
+    their sum is observable, and the pair of entries roll is read from is
+    noise rather than signal. There roll is pinned to zero and the whole
+    rotation goes into yaw. That reconstructs the same wrist; it is simply
+    not the triple somebody originally typed.
+    """
+    R = np.asarray(R, float)
+    cp = float(np.hypot(R[2, 1], R[2, 2]))    # |cos(pitch)|, always >= 0
+    pitch = float(np.arctan2(-R[2, 0], cp))
+    if cp < 1e-9:                             # gimbal lock: roll and yaw merge
+        return 0.0, pitch, float(np.arctan2(-R[0, 1], R[1, 1]))
+    return (float(np.arctan2(R[2, 1], R[2, 2])),
+            pitch,
+            float(np.arctan2(R[1, 0], R[0, 0])))
 
 
 def _axis_rot(ax, th):
@@ -113,7 +147,7 @@ class ArmKinematics:
         R = np.eye(3)
         for j in self.chain:
             x = x + R @ np.asarray(j["xyz"])
-            Rj = _rpy(*j["rpy"])
+            Rj = rpy_to_R(*j["rpy"])
             if j["index"] is not None:
                 Rj = Rj @ _axis_rot(j["axis"], q26[j["index"]])
             R = R @ Rj
@@ -128,7 +162,7 @@ class ArmKinematics:
         R = np.eye(3)
         for j in self.chain:
             x = x + R @ np.asarray(j["xyz"])
-            Rj = _rpy(*j["rpy"])
+            Rj = rpy_to_R(*j["rpy"])
             if j["index"] is not None:
                 Rj = Rj @ _axis_rot(j["axis"], q26[j["index"]])
             R = R @ Rj
@@ -164,7 +198,7 @@ class ArmKinematics:
         axes, origins = [], []
         for j in self.chain:
             x = x + R @ np.asarray(j["xyz"])
-            Rfix = _rpy(*j["rpy"])
+            Rfix = rpy_to_R(*j["rpy"])
             if j["index"] is not None:
                 if j["index"] in self.idx:
                     ax = np.asarray(j["axis"], float)
@@ -191,7 +225,7 @@ class ArmKinematics:
         axes, origins = [], []
         for j in self.chain:
             x = x + R @ np.asarray(j["xyz"])
-            Rfix = _rpy(*j["rpy"])
+            Rfix = rpy_to_R(*j["rpy"])
             if j["index"] is not None:
                 if j["index"] in self.idx:
                     ax = np.asarray(j["axis"], float)

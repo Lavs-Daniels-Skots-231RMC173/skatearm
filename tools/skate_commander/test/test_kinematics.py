@@ -12,7 +12,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from skate_commander.kinematics import ArmKinematics, reach_map, rot_error  # noqa: E402
+from skate_commander.kinematics import (ArmKinematics, R_to_rpy,  # noqa: E402
+                                        reach_map, rot_error, rpy_to_R)
 from skate_commander.urdf import parse_urdf           # noqa: E402
 
 SKT = Path(os.environ.get("SKT_DIR", "/tmp/skate_teleop/skt_v3"))
@@ -292,6 +293,59 @@ def test_rot_error_matches_axis_angle():
     print("PASS rot_error: axis-angle exact + near-pi finite")
 
 
+def test_rpy_round_trip_and_gimbal_lock():
+    """rpy_to_R / R_to_rpy are the one URDF fixed-axis convention in the tree.
+
+    Three places now write an orientation down -- every joint frame parsed out
+    of the URDF, the viewer's rotate gizmo, and the orientation a program hands
+    to moveto -- and they agree only because they share this pair. So the
+    composition is pinned against world-axis rotations built independently of
+    it, rather than against a second copy of the same three matrices.
+
+    Straight down is not an exotic pose in this cell; it is how the left tool
+    approaches the base. It is also where an arcsin-based inverse reads a
+    matrix entry an ulp from unity and throws away most of its digits, so the
+    poles are pinned rather than assumed."""
+    from skate_commander.kinematics import _axis_rot
+    rng = np.random.default_rng(17)
+
+    for _ in range(50):                     # fixed-axis XYZ == intrinsic ZYX
+        r, p, y = rng.uniform(-np.pi, np.pi, 3)
+        want = (_axis_rot([0, 0, 1.0], y) @ _axis_rot([0, 1.0, 0], p)
+                @ _axis_rot([1.0, 0, 0], r))
+        R = rpy_to_R(r, p, y)
+        assert np.max(np.abs(R - want)) < 1e-12, "not fixed-axis roll->pitch->yaw"
+        assert np.max(np.abs(R @ R.T - np.eye(3))) < 1e-12, "not orthonormal"
+        assert abs(np.linalg.det(R) - 1.0) < 1e-12, "not a rotation"
+
+    worst = 0.0
+    for _ in range(500):
+        r = rng.uniform(-np.pi, np.pi)
+        p = rng.uniform(-np.pi / 2 + 1e-3, np.pi / 2 - 1e-3)
+        y = rng.uniform(-np.pi, np.pi)
+        got = np.asarray(R_to_rpy(rpy_to_R(r, p, y)), float)
+        worst = max(worst, float(np.max(np.abs(got - [r, p, y]))))
+    assert worst < 1e-9, f"rpy round trip drifts {worst} rad"
+
+    offs = [10.0 ** -k for k in range(15)] + [0.0]   # creep onto the pole
+    for sgn in (1.0, -1.0):                 # straight down and straight up
+        for off in offs:
+            for _ in range(6):
+                r, y = rng.uniform(-np.pi, np.pi, 2)
+                R = rpy_to_R(r, sgn * (np.pi / 2 - off), y)
+                roll, pitch, yaw = R_to_rpy(R)
+                assert abs(pitch) <= np.pi / 2 + 1e-12, "pitch left its branch"
+                back = float(np.linalg.norm(
+                    rot_error(rpy_to_R(roll, pitch, yaw), R)))
+                assert back < 1e-8, \
+                    f"a near-vertical wrist lost {back} rad of round trip at {off}"
+        roll, pitch, yaw = R_to_rpy(rpy_to_R(0.4, sgn * np.pi / 2, -1.1))
+        assert roll == 0.0, "at the pole roll has to fold into yaw"
+        assert abs(abs(pitch) - np.pi / 2) < 1e-12
+    print(f"PASS rpy_to_R/R_to_rpy: fixed-axis ZYX, round trip {worst:.1e} rad, "
+          "poles fold roll into yaw")
+
+
 if __name__ == "__main__":
     test_fast_jacobian_and_reach_map()
     test_fk_matches_mujoco_and_ik_converges()
@@ -302,3 +356,4 @@ if __name__ == "__main__":
     test_ik_6dof_pose_converges()
     test_ik_6dof_bounded_near_singularity()
     test_rot_error_matches_axis_angle()
+    test_rpy_round_trip_and_gimbal_lock()

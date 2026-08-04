@@ -261,15 +261,17 @@ python3 -m skate_commander</code></pre>
       <tr><td><code>rbt.pose({joint: deg, &hellip;})</code></td><td>Move several joints together as one coordinated motion (one guard check, no mirroring).</td></tr>
       <tr><td><code>rbt.movel(arm, dx=, dy=, dz=)</code></td><td>Glide the TCP a relative step in mm along world X/Y/Z. <code>arm</code> = "left"/"right". Auto-stops when blocked.</td></tr>
       <tr><td><code>rbt.moveto(arm, x, y, z)</code></td><td>Glide the TCP to an absolute world point (mm) — same IK + guard as the drag-gizmo.</td></tr>
+      <tr><td><code>rbt.moveto(arm, x, y, z, roll, pitch, yaw)</code></td><td>&hellip;and hold a wrist orientation there too (degrees, fixed-axis &mdash; the URDF's convention, and the gizmo's). All three angles or none: a pose is a stricter request than the point it grew out of, so it can take longer or be refused where the point alone would go.</td></tr>
       <tr><td><code>rbt.home()</code></td><td>Glide to the documented safe pose.</td></tr>
       <tr><td><code>rbt.gripper(arm, deg)</code></td><td>Open/close one gripper (degrees). Same as <code>movej("R8"/"L8", deg)</code>.</td></tr>
       <tr><td><code>rbt.waypoint(i_or_name)</code></td><td>Glide to a recorded sequencer pose (1-based index or saved name).</td></tr>
       <tr><td><code>rbt.wait(seconds)</code></td><td>Dwell.</td></tr>
       <tr><td><code>rbt.tcp(arm="right")</code></td><td>Read the current TCP position (world mm).</td></tr>
+      <tr><td><code>rbt.tcp_rpy(arm="right")</code></td><td>Read the wrist orientation back as (roll, pitch, yaw) degrees &mdash; the same three numbers <code>moveto</code> takes, so a pose jogged by hand can be read off here and pasted into a program that reproduces it.</td></tr>
       <tr><td><code>rbt.q()</code></td><td>Read all 26 commanded joint angles (degrees).</td></tr>
       <tr><td><code>rbt.status()</code></td><td>Read the full state snapshot.</td></tr>
     </table>
-    <p class="note"><b>Units:</b> joints in degrees, cartesian in millimeters, world axes. <b>Joints:</b> L1&ndash;L8 left arm, R1&ndash;R8 right arm, H1&ndash;H2 head (16 of the 26-DoF body are the two arms). <b>Sandbox:</b> <code>rbt</code>, <code>math</code> and safe builtins (<code>range, len, min, max, abs, round, enumerate, zip, sum, sorted, print</code>&hellip;) — no imports or file access.</p>
+    <p class="note"><b>Units:</b> joints in degrees, cartesian in millimeters, wrist orientation in fixed-axis roll/pitch/yaw degrees, world axes. <b>Joints:</b> L1&ndash;L8 left arm, R1&ndash;R8 right arm, H1&ndash;H2 head (16 of the 26-DoF body are the two arms). <b>Sandbox:</b> <code>rbt</code>, <code>math</code> and safe builtins (<code>range, len, min, max, abs, round, enumerate, zip, sum, sorted, print</code>&hellip;) — no imports or file access.</p>
     <h3>Example</h3>
     <pre><code>rbt.home()
 rbt.gripper("right", 30)            # open

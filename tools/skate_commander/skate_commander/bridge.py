@@ -36,6 +36,16 @@ from .kinematics import rot_error               # noqa: E402
 OVERTEMP_C = 58.0          # PETG limit, per official docs
 OVERTEMP_RELEASE_C = 53.0
 
+# How close a self-clearing IK target (cartesian nudge, program move, marker
+# go-to) has to get before the bridge calls it arrived and drops the target.
+# Three thousandths of a metre at the tool tip, and one degree of wrist -- which
+# for an arm this size is about the same error measured at the tip, so asking
+# for a full pose is neither a stricter nor a laxer request than asking for the
+# point it grew out of. Anything that stops improving is given eight tenths of a
+# second before the bridge gives up on it instead.
+IK_ARRIVE_M = 0.003
+IK_ARRIVE_RAD = float(np.radians(1.0))
+
 
 def _quat_to_R(q):
     """three.js quaternion [x, y, z, w] -> 3x3 rotation matrix (world)."""
@@ -1053,20 +1063,32 @@ class RobotBridge:
                         self.targ, err = self._ik_solve(arm, target, tR)
                         self.ik_err[arm] = err
                         self.ik_manip[arm] = self.kin[arm].manipulability(self.targ)
+                        # a position-only target has nothing to be wrong about,
+                        # so its orientation residual is zero -- which makes the
+                        # arrival test below collapse back to the position-only
+                        # one it was, rather than merely behaving like it.
+                        oerr = 0.0
                         if tR is not None:
                             _, Rc = self.kin[arm].fk_pose(self.targ)
-                            self.ik_oerr[arm] = round(float(np.degrees(
-                                np.linalg.norm(rot_error(Rc, tR)))), 1)
+                            oerr = float(np.linalg.norm(rot_error(Rc, tR)))
+                            self.ik_oerr[arm] = round(float(np.degrees(oerr)), 1)
                         else:
                             self.ik_oerr[arm] = None
                         if self.ik_auto.get(arm):      # cart-step target
+                            # The give-up timer stays position-only, and that is
+                            # measured rather than assumed: rolling this wrist
+                            # drags the tool tip out of the arrival band, so on a
+                            # pose task the tip is the last term to settle and an
+                            # orientation clause here could not change when the
+                            # timer fires. test_program.py pins that drag.
                             p = self._ik_prev[arm]
                             if p is not None and p - err < 1e-5:
                                 self._ik_stall[arm] += dt    # not improving
                             else:
                                 self._ik_stall[arm] = 0.0
                             self._ik_prev[arm] = err
-                            if err < 0.003 or self._ik_stall[arm] > 0.8:
+                            if ((err < IK_ARRIVE_M and oerr < IK_ARRIVE_RAD)
+                                    or self._ik_stall[arm] > 0.8):
                                 self._clear_one(arm)         # arrived/stuck
                 if not self.paused or self._step_ticks > 0:
                     self._seq_tick(dt)

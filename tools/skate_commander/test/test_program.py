@@ -17,8 +17,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skate_ros2"))
 
-from skate_commander.bridge import RobotBridge          # noqa: E402
-from skate_commander.program import ProgramRunner       # noqa: E402
+from skate_commander.bridge import IK_ARRIVE_M, RobotBridge   # noqa: E402
+from skate_commander.program import ProgramRunner, RobotAPI   # noqa: E402
 
 SKT = Path(os.environ.get("SKT_DIR", "/tmp/skate_teleop/skt_v3"))
 MODEL = os.environ.get("SKATE_MJCF", str(SKT / "skt_v3_control.xml"))
@@ -79,6 +79,24 @@ def _wait(pred, timeout=10.0):
             return True
         time.sleep(0.05)
     return False
+
+
+def _deg_to_R(rpy_deg):
+    """A (roll, pitch, yaw) degree triple -- what the API speaks -- as a matrix."""
+    import numpy as np
+    from skate_commander.kinematics import rpy_to_R
+    return rpy_to_R(*np.radians(np.asarray(rpy_deg, float)))
+
+
+def _wrist_gap(a, b):
+    """Angle between two (roll, pitch, yaw) degree triples, in degrees.
+
+    Compared as rotations, not componentwise: the triple is a chart, and two
+    charts that differ in every entry can still be the same wrist."""
+    import numpy as np
+    from skate_commander.kinematics import rot_error
+    return float(np.degrees(np.linalg.norm(
+        rot_error(_deg_to_R(a), _deg_to_R(b)))))
 
 
 def test_program_runs_moves_and_logs():
@@ -199,6 +217,120 @@ def test_teach_in_record_and_replay():
     assert abs(rig.br.targ[11] - math.radians(45)) < 0.02
     assert abs(rig.br.targ[19] - math.radians(45)) < 0.02
     print("PASS rbt.pose moves both elbows in one command")
+    rig.close()
+
+
+def test_moveto_holds_a_wrist_orientation():
+    """The gap this closes: a program can now ask for a pose, not just a point.
+
+    Pinned against the free-wrist move to the SAME point rather than against a
+    tolerance on its own. A position-only solve is free to spend the wrist in
+    the null space and does, so if the orientation arguments were quietly
+    dropped the two moves would leave the wrist in the same place. The test is
+    that they do not -- and the free-wrist assertion is what keeps the pinned
+    one from passing vacuously, so if the solver ever stops rolling the wrist
+    on a sideways move, this test wants to be rewritten rather than trusted."""
+    if not Path(MODEL).exists():
+        pytest.skip("no control model")
+    rig = _Rig()
+    r = ProgramRunner(rig.br)
+    rbt = RobotAPI(r)
+    arm = "right"
+
+    home = rbt.tcp(arm)
+    flat = rbt.tcp_rpy(arm)
+    assert home is not None and flat is not None and len(flat) == 3
+    side = (home[0], home[1] + 40.0, home[2])
+
+    rbt.moveto(arm, *side)                       # free wrist: goes where it likes
+    free = rbt.tcp_rpy(arm)
+    rbt.moveto(arm, *home, *flat)                # back, wrist named this time
+    rbt.moveto(arm, *side, *flat)                # same point, wrist pinned
+    held = rbt.tcp_rpy(arm)
+
+    assert _wrist_gap(held, flat) < 1.5, \
+        f"asked for the wrist at {flat} and got {held}"
+    assert _wrist_gap(free, flat) > 3.0, \
+        (f"the free wrist stayed at {free}: with nothing to compare against, "
+         "this test can no longer tell a held wrist from a lucky one")
+    landed = rbt.tcp(arm)
+    assert max(abs(landed[i] - side[i]) for i in range(3)) < 6.0, \
+        f"asked for the point {side} and got {landed}"
+    print(f"PASS moveto pose: free wrist wandered "
+          f"{_wrist_gap(free, flat):.1f}, pinned wrist held "
+          f"{_wrist_gap(held, flat):.2f} (degrees)")
+
+    # tcp_rpy is the readout moveto was missing: jog away, then reproduce the
+    # pose from nothing but the two triples that were read off it.
+    rbt.movej("R4", 35)
+    assert _wrist_gap(rbt.tcp_rpy(arm), flat) > 3.0, "the jog did not move it"
+    rbt.moveto(arm, *home, *flat)
+    assert _wrist_gap(rbt.tcp_rpy(arm), flat) < 1.5
+    back = rbt.tcp(arm)
+    assert max(abs(back[i] - home[i]) for i in range(3)) < 6.0, \
+        f"pose round trip landed at {back}, not {home}"
+    print("PASS tcp / tcp_rpy read a pose back that moveto can retype")
+
+    # orientation is all three angles or none -- two of them is a mistake
+    for bad in ((10.0, None, None), (10.0, 20.0, None), (None, 20.0, None)):
+        with pytest.raises(ValueError):
+            rbt.moveto(arm, *home, *bad)
+    with pytest.raises(ValueError):
+        rbt.moveto("middle", *home)
+    print("PASS moveto rejects a half-specified orientation")
+
+    # A pose target aimed at the point the TCP is ALREADY standing on. A
+    # position-only target sees no error there and drops on the first tick, so
+    # everything the bridge does after that tick is the orientation half of the
+    # target doing the work, and the wrist has to actually get there rather than
+    # be abandoned partway.
+    here = rig.br.kin[arm].fk(rig.br.targ)
+    turn = (flat[0] + 60.0, flat[1], flat[2])
+    rig.br.set_ik_target(arm, here, auto=True, rot=_deg_to_R(turn))
+    assert rig.br.ik_targets.get(arm) is not None, "target refused"
+    time.sleep(0.25)
+    assert rig.br.ik_targets.get(arm) is not None, \
+        "arrived on position alone -- the wrist was never part of the target"
+    assert _wait(lambda: rig.br.ik_targets.get(arm) is None, 20), \
+        "a self-clearing target has to stop on its own"
+    assert _wrist_gap(rbt.tcp_rpy(arm), turn) < 1.5, \
+        "gave up on the target while the wrist was still turning"
+    print("PASS a pose target waits for the wrist instead of the point alone")
+
+    # ...and the wrist got there by SPENDING the point: rolling this wrist
+    # drags the tool tip well outside the arrival band and the solver never
+    # buys it all back, which is why the bridge's give-up timer watches the
+    # tip alone. The tip is the term that settles last on a pose task, so an
+    # orientation clause in that timer could not change when it fires. If this
+    # ever goes red the wrist has become cheap to turn, and the timer -- not
+    # this assertion -- is what wants rewriting.
+    drag = math.dist(rbt.tcp(arm), [v * 1000.0 for v in here])
+    assert drag > IK_ARRIVE_M * 1000.0, \
+        (f"a full turn of the wrist moved the tip by {drag}, inside the band "
+         "the bridge calls arrived: the give-up timer is position-only "
+         "because the tip settles last, and this is the measurement for it")
+    print(f"PASS turning the wrist costs the tip {drag:.1f} (world millimeters)")
+
+    # ...and a pose it cannot reach still stops, rather than riding the timeout
+    far = (home[0] + 900.0, home[1], home[2])
+    t0 = time.monotonic()
+    assert rbt.moveto(arm, *far, *flat) is not False
+    assert time.monotonic() - t0 < 13.0, \
+        "an out-of-reach pose sat there until moveto's own timeout fired"
+    assert rig.br.ik_targets.get(arm) is None
+    print("PASS an out-of-reach pose gives up instead of hanging")
+
+    # both readouts and the six-argument call survive the AST sandbox
+    r2 = ProgramRunner(rig.br)
+    assert r2.run("p = rbt.tcp('right')\n"
+                  "o = rbt.tcp_rpy('right')\n"
+                  "print('pose:', p, o)\n"
+                  "rbt.moveto('right', p[0], p[1], p[2], o[0], o[1], o[2])\n")
+    assert _wait(lambda: not r2.running, 30), "program never finished"
+    log = "\n".join(r2.log)
+    assert "* program finished" in log, log
+    assert "pose:" in log, log
+    print("PASS a sandboxed program can read a pose and command it back")
     rig.close()
 
 
