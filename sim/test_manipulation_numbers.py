@@ -932,11 +932,27 @@ def test_qc_station_gate_sees_the_unit_the_fixture_pair_cannot():
 
 # ------------------------------------------------------------------- benchmark
 
-def test_benchmark_report_covers_all_four_tasks():
+def test_benchmark_report_covers_every_task_and_says_what_produced_it():
+    """Five tasks, all clean, and the run that made them still identifiable.
+
+    The provenance is checked and not merely present because the tasks stopped
+    being interchangeable the moment one of them needed jaws: `add_gripper`
+    re-cones the friction of the WHOLE model, so a newton measured on the
+    hand-off is not a newton measured on the inserts, and a reader who cannot
+    tell which scene a row came from cannot tell a regression from a re-run."""
     b = load("sim/benchmark_results.json")
-    assert set(b) == {"reach", "carry", "insert", "insert_m2"}
-    for name, node in b.items():
+    meta = b["meta"]
+    tasks = {k: v for k, v in b.items() if k != "meta"}
+    assert set(tasks) == {"reach", "carry", "handoff", "insert", "insert_m2"}
+    for name, node in tasks.items():
         assert node["summary"]["success_rate"] == "5/5", name    # sim/README table
+    assert (meta["seed"], meta["trials"]) == (0, 5)              # sim/README caption
+    assert set(meta["tasks"]) == set(tasks)
+    # the hand-off is the ONE task on the jaws scene -- sim/README says so
+    scenes = {n: (tasks[n]["scene"], meta["scenes"][n]) for n in tasks}
+    assert scenes["handoff"] == ("cell_gripper", "skt_v3_cell_gripper.xml")
+    assert all(s == ("cell", "skt_v3_cell.xml")
+               for n, s in scenes.items() if n != "handoff"), scenes
 
 
 def test_benchmark_numbers_match_sim_readme_table():
@@ -951,19 +967,36 @@ def test_benchmark_numbers_match_sim_readme_table():
     assert 100.0 <= carry["peg_carried_mm"]["mean"] <= 120.0
     assert carry["peg_tilt_deg"]["max"] == 1.8
 
-    ins = b["insert"]["summary"]                              # "18.7 mm, tilt 1.2-1.4 deg"
-    assert round(ins["depth_mm"]["mean"], 1) == 18.7
+    h = b["handoff"]["summary"]               # "0.4 mm, <=0.02 deg, 11.9 N, 3.9-4.1 mm"
+    _states(SRM, r"peg settles ([\d.]+) mm when the giver opens",
+            h["drop_mm"]["mean"])
+    _bound(SRM, r"peg tilt <=([\d.]+) deg", h["peg_tilt_deg"]["max"])
+    _states(SRM, r"receiver holding ([\d.]+) N", h["hold_force_n"]["mean"])
+    _states(SRM, r"gap ([\d.]+)-[\d.]+ mm", h["gap_mm"]["min"])
+    _states(SRM, r"gap [\d.]+-([\d.]+) mm", h["gap_mm"]["max"])
+    # the pass is only a pass if the plates never met: a gap is a clearance, so
+    # the MINIMUM over the trials has to stay positive, not the mean.
+    assert min(t["gap_mm"] for t in b["handoff"]["trials"]) > 0
+    assert all(t["handed"] for t in b["handoff"]["trials"])   # "takes it OUT of the other"
+
+    ins = b["insert"]["summary"]                              # "18.5 mm, tilt 1.2-1.4 deg"
+    assert round(ins["depth_mm"]["mean"], 1) == 18.5
     assert (ins["peg_tilt_deg"]["min"], ins["peg_tilt_deg"]["max"]) == (1.2, 1.4)
     assert all(not t["aborted"] for t in b["insert"]["trials"])          # "no tau-abort"
     _states(SRM, r"depth ([\d.]+) mm \(target 18\)", ins["depth_mm"]["mean"])
     _states(SRM, r"peg tilt ([\d.]+)-[\d.]+ deg", ins["peg_tilt_deg"]["min"])
     _states(SRM, r"peg tilt [\d.]+-([\d.]+) deg", ins["peg_tilt_deg"]["max"])
 
-    m2 = b["insert_m2"]["summary"]                            # "23.7 mm, 0.7-0.9, 4.7-4.9 N"
+    m2 = b["insert_m2"]["summary"]                            # "23.7 mm, 0.2-0.8, 4.8-5.9 N"
     assert round(m2["peg_rel_z_mm"]["mean"], 1) == 23.7
-    assert (m2["peg_tilt_deg"]["min"], m2["peg_tilt_deg"]["max"]) == (0.7, 0.9)
+    _states(SRM, r"peg-in-base ([\d.]+) mm", m2["peg_rel_z_mm"]["mean"])
+    _states(SRM, r"peg-in-base [\d.]+ mm, peg tilt ([\d.]+)-[\d.]+ deg",
+            m2["peg_tilt_deg"]["min"])
+    _states(SRM, r"peg-in-base [\d.]+ mm, peg tilt [\d.]+-([\d.]+) deg",
+            m2["peg_tilt_deg"]["max"])
     peaks = sorted(round(t["peak_wrench_n"], 1) for t in b["insert_m2"]["trials"])
-    assert (peaks[0], peaks[-1]) == (4.7, 4.9), peaks         # the quoted 4.7-4.9 N band
+    _states(SRM, r"peak wrench ([\d.]+)-[\d.]+ N", peaks[0])
+    _states(SRM, r"peak wrench [\d.]+-([\d.]+) N", peaks[-1])
     assert m2["peak_wrench_n"]["max"] < 9.0                              # below the abort
     assert all(not t["aborted"] for t in b["insert_m2"]["trials"])
     assert m2["offset_mm"]["max"] <= 2.5                      # injected residual <=2.5 mm

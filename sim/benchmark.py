@@ -11,7 +11,15 @@ servos — qpos is never written directly). Tasks:
   carry   — the left arm grasps the base part and the right the peg, then both
             carry their objects together (6-DoF, orientation-locked) to shifted
             targets; metric = each object retained (not dropped), carry distance
-            and tilt. (A true weld-transfer hand-off waits for the real gripper.)
+            and tilt.
+  handoff — the two hands pass the peg between them in mid air: the right takes
+            it off the table, carries it to the meet, the left rolls its tool
+            over and comes up from underneath onto the other end, closes, and
+            the right lets go and backs out; metric = how far the peg falls as
+            it changes hands, how far it slips as the receiver closes, its tilt
+            afterwards, and the measured plate-to-plate clearance the two hands
+            leave each other. Runs on the `--gripper` scene (real jaws on both
+            wrists), not the weld cell — see `scene` in the report's `meta`.
   insert  — the full bimanual peg-in-hole: lateral-offset grasps, a 6-DoF
             orientation-locked carry to the meet point, relative-servo align,
             then a force-guarded (tau-watchdog) descent; metric = insertion
@@ -26,6 +34,8 @@ Usage (build the models + cell scene once, then run):
     python make_cell_scene.py      /path/to/skate_teleop/skt_v3
     python benchmark.py --model /path/to/skate_teleop/skt_v3 \
         [--trials 5] [--tasks reach,handoff,insert] [--seed 0] [--json out.json]
+
+`handoff` needs the jaws scene; it is built on demand if it is not there yet.
 """
 import argparse
 import os
@@ -38,14 +48,33 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from primitives import reach, hold, move_joints, grasp, release, Arm  # noqa: E402
 from insertion import Insertion  # noqa: E402
+from handoff import HandOff, MEET  # noqa: E402
+from sequencer import Cell  # noqa: E402
 
 TABLE_Z = 0.10          # a peg below this height counts as dropped
 
+# The scenes a task can run in. Not interchangeable: `make_cell_scene.add_gripper`
+# sets impratio and an elliptic friction cone on the WHOLE model, so the jaws
+# scene is different physics, and a number from one scene may not be compared
+# with a number from the other. That is why the report records which scene each
+# task ran in instead of leaving it to be inferred from the task's name.
+SCENES = {"cell": "skt_v3_cell.xml", "cell_gripper": "skt_v3_cell_gripper.xml"}
+TASK_SCENE = {"handoff": "cell_gripper"}      # anything unlisted runs the weld cell
 
-def load_cell(model_dir):
-    xml = os.path.join(model_dir, "skt_v3_cell.xml")
+
+def load_cell(model_dir, scene="cell"):
+    """Load one of `SCENES`. The default is the weld cell every other task and
+    every other caller of this function has always loaded, refusing exactly as
+    it always did. A non-default scene is BUILT when missing rather than
+    demanded — the same `make(..., gripper=True)` call test_cell_gripper.py
+    already makes — because there is no sense failing a benchmark run over a
+    file the repo knows how to generate."""
+    xml = os.path.join(model_dir, SCENES[scene])
     if not os.path.exists(xml):
-        sys.exit("run make_cell_scene.py first (needs skt_v3_cell.xml)")
+        if scene == "cell":
+            sys.exit("run make_cell_scene.py first (needs skt_v3_cell.xml)")
+        from make_cell_scene import make
+        make(model_dir, gripper=True)
     return mujoco.MjModel.from_xml_path(xml)
 
 
@@ -139,11 +168,10 @@ def task_carry(m, trials, rng):
     right the peg (the proven dual-grasp), then both carry their objects
     together (6-DoF, orientation-locked) to shifted targets. Metric = each
     object retained (not dropped), how far it was carried, and its tilt.
-    (A true hand-off waits for the real gripper — every benchmark task runs the
-    DEFAULT cell, where both grasps are magnetic weld stand-ins, and passing one
-    object between two welds is a hardware-era task. M4's actuated jaws exist,
-    but they are wired into sequencer.py's cycle on the right hand and the
-    opt-in `--gripper` scene, not into these tasks.)"""
+    (Two objects carried side by side, NOT one object passed between the hands:
+    this task runs the weld cell, where a grasp is an equality constraint and
+    two of them on one body fight. Passing a part hand to hand needs real jaws
+    on both wrists, which is the `handoff` task and a different scene.)"""
     bp, pg = body_id(m, "base_part"), body_id(m, "peg")
     rows = []
     for _ in range(trials):
@@ -168,6 +196,48 @@ def task_carry(m, trials, rng):
                      "peg_tilt_deg": round(tilt_deg(m, d, pg), 1),
                      "retained": bool(base_ret and peg_ret),
                      "success": bool(base_ret and peg_ret and tilt_deg(m, d, pg) < 20)})
+    return rows
+
+
+# ---- task: jaw-to-jaw hand-off ---------------------------------------------
+def task_handoff(m, trials, rng):
+    """One hand takes the peg OUT of the other, in mid air, on M4's jaws.
+
+    The disturbance is the one `carry` and `insert` inject — the giving hand's
+    grasp aim is offset by up to 4 mm on each horizontal axis — so the peg is
+    picked up slightly crooked and the receiver, which is still told to meet it
+    at the nominal point, has to cope. The controller lives in `handoff.py`;
+    what this task adds is the trial loop and the score.
+
+    A trial counts only if the peg actually changed hands: it stayed up when
+    the giver let go, the receiver is still loaded, it is not lying over, and
+    the two hands' pad plates never touched each other."""
+    rows = []
+    for _ in range(trials):
+        d = fresh(m)
+        approach(m, d)
+        cell = Cell(m, d)
+        cell.armL.lock_orientation()
+        cell.armR.lock_orientation()
+        h = HandOff(cell, cell.armR, cell.armL, MEET)
+        jx, jy = rng.uniform(-0.004, 0.004), rng.uniform(-0.004, 0.004)
+        t0 = time.perf_counter()
+        pick_res = h.pick(aim=np.array([jx, jy, 0.0]))
+        out = h.transfer()
+        rows.append({"pick_residual_mm": round(pick_res * 1000, 2),
+                     "carry_err_mm": out["carry_err_mm"],
+                     "gap_mm": out["gap_mm"],
+                     "give_contact_mm": out["give_contact_mm"],
+                     "take_contact_mm": out["take_contact_mm"],
+                     "take_residual_mm": out["take_residual_mm"],
+                     "slip_mm": out["slip_mm"],
+                     "drop_mm": out["drop_mm"],
+                     "peg_tilt_deg": out["tilt_deg"],
+                     "hold_force_n": out["hold_force_n"],
+                     "wall_s": round(time.perf_counter() - t0, 1),
+                     "handed": out["handed"],
+                     "success": bool(out["handed"] and out["tilt_deg"] < 20
+                                     and out["gap_mm"] > 0)})
     return rows
 
 
@@ -292,25 +362,54 @@ def task_insert_m2(m, trials, rng):
     return rows
 
 
-TASKS = {"reach": task_reach, "carry": task_carry, "insert": task_insert,
-         "insert_m2": task_insert_m2}
+TASKS = {"reach": task_reach, "carry": task_carry, "handoff": task_handoff,
+         "insert": task_insert, "insert_m2": task_insert_m2}
+
+
+def task_rng(seed, name):
+    """One independent disturbance stream per task.
+
+    A single generator shared down the loop -- what this file did while every
+    task ran the same scene -- makes a task's numbers depend on which OTHER
+    tasks ran beside it, and in what order. That is fatal for the one thing
+    this suite exists to do: `--tasks insert` would inject different residual
+    misalignments than the same task inside a full-suite run, so a policy
+    measured on the subset could not be compared against a baseline measured
+    on the whole. The stream is keyed on the task's position in `TASKS` rather
+    than in the caller's list, so the key is a property of the task, not of the
+    command line. Adding a task to the END of `TASKS` therefore leaves every
+    existing task's draws untouched; inserting one in the middle does not, and
+    that is the price of `TASKS` also being the documented task order."""
+    return np.random.default_rng([seed, list(TASKS).index(name)])
 
 
 def run(model_dir, tasks, trials, seed):
-    """Run the named tasks and return a {task: {trials, summary}} report."""
-    m = load_cell(model_dir)
-    rng = np.random.default_rng(seed)
-    report = {}
+    """Run the named tasks and return a {task: {trials, summary}} report, plus
+    a `meta` node recording what produced it.
+
+    The provenance is not bookkeeping. A committed report is quoted in the
+    prose and re-derived by the hardware-free guard, and the tasks no longer
+    all run the same scene, so "which model, which seed, how many trials, which
+    MuJoCo" has to travel WITH the numbers or a later reader has no way to tell
+    a regression from a different run."""
+    models, report = {}, {}
     for name in tasks:
         if name not in TASKS:
             sys.exit(f"unknown task: {name} (choose from {', '.join(TASKS)})")
-        rows = TASKS[name](m, trials, rng)
+        scene = TASK_SCENE.get(name, "cell")
+        if scene not in models:
+            models[scene] = load_cell(model_dir, scene)
+        rows = TASKS[name](models[scene], trials, task_rng(seed, name))
         succ = sum(r["success"] for r in rows)
         num_keys = [k for k, v in rows[0].items()
                     if isinstance(v, (int, float)) and not isinstance(v, bool)]
         summary = {k: summarize([r[k] for r in rows]) for k in num_keys}
         summary["success_rate"] = f"{succ}/{len(rows)}"
-        report[name] = {"trials": rows, "summary": summary}
+        report[name] = {"trials": rows, "summary": summary, "scene": scene}
+    report["meta"] = {"seed": seed, "trials": trials, "tasks": list(tasks),
+                      "mujoco": mujoco.__version__,
+                      "scenes": {n: SCENES[TASK_SCENE.get(n, "cell")]
+                                 for n in tasks}}
     return report
 
 
@@ -318,15 +417,16 @@ def main():
     ap = argparse.ArgumentParser(description="SkateArm bimanual benchmark suite")
     ap.add_argument("--model", required=True, help="path to skate_teleop/skt_v3")
     ap.add_argument("--trials", type=int, default=5)
-    ap.add_argument("--tasks", default="reach,carry,insert,insert_m2",
+    ap.add_argument("--tasks", default="reach,carry,handoff,insert,insert_m2",
                     help=f"comma-separated; choose from {', '.join(TASKS)}")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--json", default=None, help="write the full report as JSON")
     args = ap.parse_args()
     tasks = [t.strip() for t in args.tasks.split(",") if t.strip()]
     report = run(args.model, tasks, args.trials, args.seed)
+    print("META:", report["meta"])
     for name in tasks:
-        print(f"\n=== {name} ({args.trials} trials) ===")
+        print(f"\n=== {name} ({args.trials} trials, {report[name]['scene']}) ===")
         for r in report[name]["trials"]:
             print("  ", r)
         print("  SUMMARY:", report[name]["summary"])

@@ -19,8 +19,11 @@ robot needed:
 
 - **URDF / config validator** — a small `tools/` script that sanity-checks a Skate model
   directory (joint count, limits, mesh references) and prints a friendly report.
-- **A new sim demo** — add a `sim/demo_*.py` for a bimanual primitive (e.g. a two-handed
-  hand-off), following the existing demos, with a still + GIF.
+- **A new sim demo** — add a `sim/demo_*.py` for a bimanual primitive, following the
+  existing demos, with a still + GIF. The two-handed hand-off that used to be the
+  example here now ships as a controller and a benchmark task (`sim/handoff.py`,
+  `benchmark.py --tasks handoff`) but has no demo script or GIF of its own, so
+  rendering that one is a good first pass at the pattern.
 - **Getting-started handbook** — expand the quick-start into a step-by-step `docs/` page,
   from clone to first browser-driven pose.
 - **More tests** — add a hardware-free unit test for an untested helper (e.g. in

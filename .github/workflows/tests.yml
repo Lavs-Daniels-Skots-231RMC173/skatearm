@@ -109,6 +109,11 @@ jobs:
           SKT_DIR: skate_teleop/skt_v3
         run: pytest -q sim/test_cell_gripper.py
 
+      - name: Bimanual benchmark suite — every task runs, the hand-off changes hands, the streams stay independent
+        env:
+          SKT_DIR: skate_teleop/skt_v3
+        run: pytest -q sim/test_benchmark.py
+
       - name: Cockpit contact modes — stop vs compliant (M3+)
         env:
           SKT_DIR: skate_teleop/skt_v3

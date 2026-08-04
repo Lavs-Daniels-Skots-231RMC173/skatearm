@@ -620,7 +620,7 @@ Tools get built because SkateArm needs them — then released standalone:
 | [`skate_commander`](tools/skate_commander/) | Web cockpit — browser digital twin: drag-IK, mirror-mode motion, RRT-Connect routing, teach-in programs, optional mink / rerun.io / LeRobot backends, live telemetry ([full feature catalogue](#skate-commander--web-cockpit) · [live preview](https://raw.githack.com/dsl-robotics/skatearm/main/tools/skate_commander/preview.html)) | ✅ **v0.8.5** (real-camera passthrough waits for hardware) |
 | Control-ready MJCF | skt_v3 with actuators, ready for control work | ✅ first version in [sim/](sim/) |
 | Teleop dataset hub | Bimanual datasets in LeRobot format | planned |
-| [MuJoCo benchmark suite](sim/benchmark.py) | Repeatable bimanual tasks — reach · carry · peg-insert · force-regulated peg-insert — with quantitative metrics, headless &amp; seeded | ✅ **first version in [sim/](sim/)** |
+| [MuJoCo benchmark suite](sim/benchmark.py) | Repeatable bimanual tasks — reach · carry · hand-off · peg-insert · force-regulated peg-insert — with quantitative metrics, headless &amp; seeded, one disturbance stream per task | ✅ **first version in [sim/](sim/)** |
 | URDF/config validator | Sanity-check tool for Skate configs | planned |
 | Getting-started handbook | From unboxing to first teleop | planned |
 
