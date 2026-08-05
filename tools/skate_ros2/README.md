@@ -73,7 +73,10 @@ the watchdog; flags come from the last command.
 
 > ⚠️ The wire format is Python pickle — deserializing it can execute code.
 > That's the firmware's design; use it on a trusted LAN only (the official
-> stack makes the same assumption).
+> stack makes the same assumption). `decode_packet` hardens the *decoding*
+> side, and `SKATE_AUTH` (below) can authenticate a link where **both** ends
+> are ours — but a real robot has no key, so on that link the trusted LAN is
+> still the whole of the security model.
 
 ## Quick start — no hardware, no ROS
 
@@ -90,6 +93,63 @@ python3 examples/wave_no_ros.py --host 127.0.0.1
 
 Anything written against `127.0.0.1` here talks to the real robot by swapping
 the host for `r.local`. That's the whole point.
+
+## Where it listens, and authenticating the link (`SKATE_AUTH`)
+
+Anyone who can reach the sim endpoint's port can command motion, so it binds
+**`127.0.0.1` by default**: on a fresh checkout nothing outside the machine can
+reach it. Serving any other address is something you have to ask for, and
+asking requires a key:
+
+```bash
+# refused, by design:
+python3 -m skate_ros2.sim_endpoint --model .../skt_v3_control.xml --bind 0.0.0.0
+# [sim_endpoint] refusing to serve motion commands on '0.0.0.0' without a key:
+# anyone who can reach this port could drive the arms. Set $SKATE_AUTH to the
+# same secret on BOTH ends, or bind 127.0.0.1. (...)
+
+# works — the same secret exported on both ends:
+export SKATE_AUTH='a long random string, 16+ bytes'
+python3 -m skate_ros2.sim_endpoint --model .../skt_v3_control.xml --bind 0.0.0.0
+```
+
+With `SKATE_AUTH` set, every datagram in both directions is wrapped in a keyed
+envelope
+
+```
+b"SKA1" | nonce (8 B) | HMAC-SHA256(key, nonce|body)[:16] | body
+```
+
+that a forged, stale or replayed packet can't produce. Three properties are
+worth knowing:
+
+* **The envelope sits outside fragmentation.** Every datagram verifies on its
+  own, so a forged fragment is dropped before it can occupy a reassembly slot —
+  and its 28 B still fit under the ~1472 B ceiling that WSL2 loopback enforces
+  (note 2 below): `FRAG_MAX_DGRAM + AUTH_OVERHEAD` = 1400 + 28 ≤ 1472, pinned
+  by a test so the two limits can't drift apart.
+* **The endpoint verifies before it registers the sender**, so an unkeyed peer
+  gets no *telemetry* either, not merely no commands. Authentication that only
+  guards the command path is not authentication.
+* **The nonce carries a wall-clock stamp**, accepted inside a ±5 s window —
+  that window is what bounds replay, and it is wall clock because the two ends
+  are separate processes whose monotonic clocks aren't comparable. Two machines
+  whose clocks disagree by more than that will see *everything* refused: the
+  endpoint's periodic log grows a `rejected=N` field and `SkateLink.auth_errors`
+  counts the same on the client. Fix the clocks rather than the window.
+
+Clients read the key from the environment too, so exporting `SKATE_AUTH` before
+starting the cockpit, the driver or MoveIt is enough (`SkateLink(host, port)`
+picks it up; pass `key=` to be explicit). There is deliberately **no `--key`
+flag** — argv is world-readable in `ps`. The key must be at least 16 bytes: it
+is raw HMAC key material with no KDF, so a shorter secret is brute-forceable
+from a single captured datagram.
+
+**Against a real Skate, leave `SKATE_AUTH` unset.** The firmware has no
+authentication and cannot be given one; it would drop the envelope as garbage.
+Authentication protects the links this project owns on both ends — on the link
+to a real robot, the trusted LAN is still the whole security model. See
+[SECURITY.md](../../SECURITY.md).
 
 ## Quick start — ROS 2 (target: Jazzy)
 
@@ -270,16 +330,19 @@ ros2 launch skate_moveit_config demo.launch.py \
 The sim endpoint streams telemetry to **every** client heard from recently
 (3 s TTL), not just the last sender — so two stacks can share one sim. That
 turns [Skate Commander](../skate_commander/) into a live viewer for MoveIt:
-start the cockpit (its spawned sim endpoint binds `0.0.0.0:2000`), click
+start the cockpit (its spawned sim endpoint binds `127.0.0.1:2000`), click
 **OBSERVE** in its menu bar (the cockpit keeps receiving telemetry but stops
 transmitting commands), then run the driver + MoveIt against the same
 endpoint — the browser twin mirrors the executed trajectory in real time and
 an **EXTERNAL** chip lights while it moves. On WSL2 with mirrored networking
-`robot_host:=127.0.0.1` reaches the Windows-hosted sim directly; otherwise
-use the Windows host's IP (and `--sim-host` on the cockpit for the reverse
-direction). Verified live: a 15-waypoint MoveItPy plan executed SUCCEEDED on
-the shared sim with the cockpit twin sweeping the full trajectory — zero
-driver rejects.
+`robot_host:=127.0.0.1` reaches the Windows-hosted sim directly. Without it the
+two stacks sit on different addresses, so the endpoint has to listen
+off-loopback and that now needs a key: export `SKATE_AUTH` everywhere, start
+the endpoint yourself with `--bind 0.0.0.0`, and point the cockpit's
+`--sim-host` (it connects as a client instead of spawning its own) and MoveIt's
+`robot_host:` at the host's IP. Verified live: a 15-waypoint MoveItPy plan
+executed SUCCEEDED on the shared sim with the cockpit twin sweeping the full
+trajectory — zero driver rejects.
 
 ## Sim endpoint: honest approximations
 
@@ -305,7 +368,13 @@ python3 test/test_names.py              # ordering / CAN layout invariants
 python3 test/test_protocol_loopback.py  # wire contract over localhost UDP
 python3 test/test_driver_logic.py       # arming/deadman/estop/overtemp logic
                                         # (runs WITHOUT ROS via stubbed rclpy)
-SKATE_MJCF=.../skt_v3_control.xml python3 test/test_e2e_sim.py  # full e2e
+pytest -q test/test_wire_safe.py        # restricted unpickler vs hostile packets
+pytest -q test/test_wire_auth.py        # keyed envelope: forgery, replay, a
+                                        # stale nonce, the bind gate, and
+                                        # verify-before-register
+SKATE_MJCF=.../skt_v3_control.xml python3 test/test_e2e_sim.py    # full e2e
+SKATE_MJCF=.../skt_v3_control.xml python3 test/test_multipeer.py  # two peers,
+                                        # one of them without the key
 ```
 
 Verified end-to-end in CI-like conditions: 60 Hz commands, ~190 telemetry

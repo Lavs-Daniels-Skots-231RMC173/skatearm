@@ -32,8 +32,18 @@ arbitrary-code-execution primitive. Treat the control link accordingly:
 
 - Run it only on a **trusted, isolated LAN** (or loopback) — never expose the control port
   to the public internet.
-- There is currently **no authentication** on the wire; anyone who can reach the port can
-  command motion (subject to the firmware deadman / E-STOP).
+- **Real firmware has no authentication and cannot be given one**: anyone who can reach a
+  robot's port can command motion (subject to the firmware deadman / E-STOP). That is a
+  property of the Skate, not a gap in this repo, and no amount of code here changes it.
+- **Where both ends are ours, the wire can be authenticated.** Setting `SKATE_AUTH` to the
+  same secret on a client and on `skate_ros2.sim_endpoint` wraps every datagram in a keyed
+  envelope (HMAC-SHA256 over a nonce + the body) that a forged, stale or replayed packet
+  cannot produce; the endpoint verifies it *before* the sender is registered, so an
+  unauthenticated peer receives no telemetry either. Leave it unset against a real robot —
+  the firmware has no key and would drop the envelope as garbage.
+- The sim endpoint **binds `127.0.0.1` by default** and **refuses to start** on any other
+  address without `SKATE_AUTH`. Serving motion commands to the network is a thing you have
+  to ask for explicitly.
 - The UDP **decoder is hardened**: `decode_packet` uses a restricted unpickler with an
   **exact** allow-list — the telemetry classes plus numpy array reconstruction only, *no*
   `numpy.*` wildcard — so a crafted packet can't reach `os.system` / `eval` / `numpy.f2py`.
@@ -44,5 +54,5 @@ arbitrary-code-execution primitive. Treat the control link accordingly:
 - The cockpit binds `127.0.0.1` by default, and its WebSocket **refuses cross-site origins**
   (a DNS-rebinding defense).
 
-Transport **authentication** (so only an authorised client can command motion) is still
-tracked on the roadmap; until then, keep the link on a trusted LAN.
+The honest summary: authentication protects the links this project owns, and a trusted LAN
+is still what protects the link to a real robot.

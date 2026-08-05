@@ -23,10 +23,20 @@ decoder here defends against it -- :func:`decode_packet` uses a *restricted*
 unpickler by default (only the known telemetry classes + numpy are resolvable),
 so a hostile packet can't run code. Set ``SKATE_WIRE=raw`` to opt out. Even so,
 prefer a trusted local network (the same assumption the official stack makes).
+
+AUTHENTICATION: the firmware has none and cannot be given one, so the wire is
+open by default and stays byte-compatible with a real Skate. Where BOTH ends
+are ours -- a client and :mod:`skate_ros2.sim_endpoint` -- setting
+``$SKATE_AUTH`` to the same shared secret on both wraps every datagram in a
+keyed envelope (:class:`WireAuth`) that a forged, stale or replayed packet
+cannot produce. Against real firmware leave it unset: the robot has no key and
+would drop the envelope as garbage.
 """
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import io
 import os
 import pickle
@@ -233,6 +243,139 @@ class Reassembler:
             del self._parts[k]
 
 
+# -- transport authentication ----------------------------------------------
+# The firmware has no authentication and cannot be given one, so this is OFF by
+# default and the wire stays byte-compatible with a real Skate. Where BOTH ends
+# are ours -- a client and sim_endpoint -- exporting the same $SKATE_AUTH on
+# both wraps every datagram in a keyed envelope:
+#
+#     b"SKA1" | nonce (8 B, big-endian) | HMAC-SHA256(key, nonce|body)[:16] | body
+#
+# The envelope goes OUTSIDE fragmentation, so every datagram verifies on its own
+# and a forged fragment is dropped before it can occupy a reassembly slot.
+#
+# The nonce is a wall-clock microsecond stamp in the top 52 bits (good to ~2112)
+# plus a 12-bit rolling per-sender sequence in the low bits. The stamp bounds how
+# long an intercepted-and-withheld datagram stays injectable AND bounds replay
+# memory to one window of traffic; it is WALL clock, not monotonic, because the
+# two ends are different processes whose monotonic clocks are not comparable. The
+# sequence makes the nonce unique inside a single microsecond -- a burst of
+# fragments really does hit that, and without it the second fragment of a large
+# telemetry packet would be refused as a replay of the first.
+AUTH_ENV = "SKATE_AUTH"
+AUTH_MAGIC = b"SKA1"
+AUTH_HEADER = struct.Struct("!Q")                       # nonce
+AUTH_TAG_LEN = 16                                       # truncated HMAC-SHA256
+AUTH_OVERHEAD = len(AUTH_MAGIC) + AUTH_HEADER.size + AUTH_TAG_LEN   # 28
+AUTH_SEQ_BITS = 12
+AUTH_SEQ_MASK = (1 << AUTH_SEQ_BITS) - 1
+AUTH_WINDOW = 5.0                                       # s of accepted clock skew
+AUTH_WINDOW_US = int(AUTH_WINDOW * 1e6)
+AUTH_MAX_SEEN = 8192                                    # nonces/peer, DoS guard
+AUTH_MIN_KEY = 16                                       # bytes
+
+# 1500 B Ethernet MTU - 20 B IPv4 - 8 B UDP. A datagram larger than this is what
+# WSL2 loopback silently drops, i.e. the bug fragmentation exists to avoid; the
+# envelope must not push a full fragment back over it. See test_wire_auth.py,
+# which pins FRAG_MAX_DGRAM + AUTH_OVERHEAD <= UDP_SAFE_DGRAM.
+UDP_SAFE_DGRAM = 1472
+
+
+def auth_key(explicit=None):
+    """Resolve the shared secret: the argument, else ``$SKATE_AUTH``, else None.
+
+    None means "no authentication" -- the default, and the only setting that can
+    talk to real firmware.
+    """
+    if explicit is None:
+        explicit = os.environ.get(AUTH_ENV, "")
+    if not explicit:
+        return None
+    return explicit if isinstance(explicit, bytes) else str(explicit).encode()
+
+
+def is_tagged(datagram):
+    """True if the datagram carries an auth envelope."""
+    return datagram.startswith(AUTH_MAGIC)
+
+
+class WireAuth:
+    """Wraps and verifies the keyed envelope. One object serves both ends.
+
+    :meth:`wrap` stamps and signs an outbound datagram; :meth:`unwrap` returns
+    the body of an inbound one, or ``None`` for anything forged, untagged, stale
+    or replayed (:attr:`rejected` counts why). Verification is constant-time and
+    happens BEFORE the freshness bookkeeping, so an attacker without the key can
+    never grow the replay set.
+    """
+
+    def __init__(self, key):
+        key = key if isinstance(key, bytes) else str(key).encode()
+        if len(key) < AUTH_MIN_KEY:
+            raise ValueError(
+                f"{AUTH_ENV} must be at least {AUTH_MIN_KEY} bytes; this is raw "
+                "HMAC key material with no KDF, so a short secret is "
+                "brute-forceable from a single captured datagram")
+        self._key = key
+        self._seq = 0
+        self._seen = {}          # peer -> set of accepted nonces inside the window
+        self.rejected = {"untagged": 0, "forged": 0, "stale": 0,
+                         "replay": 0, "flood": 0}
+
+    @property
+    def n_rejected(self):
+        return sum(self.rejected.values())
+
+    def _tag(self, head, body):
+        return hmac.new(self._key, head + body, hashlib.sha256).digest()[:AUTH_TAG_LEN]
+
+    def wrap(self, datagram, now=None):
+        """Sign one outbound datagram -> the envelope bytes."""
+        now = time.time() if now is None else now
+        self._seq = (self._seq + 1) & AUTH_SEQ_MASK
+        nonce = (int(now * 1e6) << AUTH_SEQ_BITS) | self._seq
+        head = AUTH_HEADER.pack(nonce)
+        return AUTH_MAGIC + head + self._tag(head, datagram) + datagram
+
+    def unwrap(self, datagram, peer=None, now=None):
+        """Verify one inbound datagram -> its body, or None if it is not ours."""
+        if len(datagram) < AUTH_OVERHEAD or not datagram.startswith(AUTH_MAGIC):
+            self.rejected["untagged"] += 1
+            return None
+        head = datagram[len(AUTH_MAGIC):len(AUTH_MAGIC) + AUTH_HEADER.size]
+        tag = datagram[len(AUTH_MAGIC) + AUTH_HEADER.size:AUTH_OVERHEAD]
+        body = datagram[AUTH_OVERHEAD:]
+        if not hmac.compare_digest(tag, self._tag(head, body)):
+            self.rejected["forged"] += 1
+            return None
+        (nonce,) = AUTH_HEADER.unpack(head)
+        now_us = int((time.time() if now is None else now) * 1e6)
+        if abs(now_us - (nonce >> AUTH_SEQ_BITS)) > AUTH_WINDOW_US:
+            self.rejected["stale"] += 1
+            return None
+        seen = self._seen.setdefault(peer, set())
+        if len(seen) >= AUTH_MAX_SEEN:
+            self._prune(now_us)
+            seen = self._seen.setdefault(peer, set())
+            if len(seen) >= AUTH_MAX_SEEN:
+                self.rejected["flood"] += 1
+                return None
+        if nonce in seen:
+            self.rejected["replay"] += 1
+            return None
+        seen.add(nonce)
+        return body
+
+    def _prune(self, now_us):
+        floor = now_us - AUTH_WINDOW_US
+        for p in list(self._seen):
+            fresh = {n for n in self._seen[p] if (n >> AUTH_SEQ_BITS) >= floor}
+            if fresh:
+                self._seen[p] = fresh
+            else:
+                del self._seen[p]
+
+
 class TelemetryState:
     """Latest decoded telemetry plus receive timestamps."""
 
@@ -336,9 +479,14 @@ class SkateLink:
     Non-blocking; call :meth:`poll` often (e.g. from a 60 Hz timer). Heartbeats
     are sent automatically from :meth:`poll`, so the robot keeps streaming even
     when no commands are being sent.
+
+    ``key`` (or ``$SKATE_AUTH``) turns on the keyed envelope -- only for a far
+    end that shares the secret, i.e. :mod:`skate_ros2.sim_endpoint`. Real
+    firmware has no key and would drop the envelope as garbage, so leave it unset
+    when talking to a robot.
     """
 
-    def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT):
+    def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT, key=None):
         self.host_name = host
         self.port = port
         self.addr = None          # resolved (ip, port)
@@ -347,7 +495,10 @@ class SkateLink:
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._sock.setblocking(False)
         self.decode_errors = 0
+        self.auth_errors = 0
         self._reasm = Reassembler()
+        k = auth_key(key)
+        self.auth = WireAuth(k) if k else None
 
     # -- connection -------------------------------------------------------
     def resolve(self):
@@ -365,13 +516,21 @@ class SkateLink:
         return self.state.connected
 
     # -- io ----------------------------------------------------------------
+    def _out(self, datagram):
+        """Send one datagram to the robot, signed if a key is configured."""
+        if self.auth is not None:
+            datagram = self.auth.wrap(datagram)
+        try:
+            self._sock.sendto(datagram, self.addr)
+        except OSError:
+            return False
+        return True
+
     def heartbeat(self, now=None):
         if self.addr is None and not self.resolve():
             return False
         now = now if now is not None else time.monotonic()
-        try:
-            self._sock.sendto(HEARTBEAT, self.addr)
-        except OSError:
+        if not self._out(HEARTBEAT):
             return False
         self._last_heartbeat = now
         return True
@@ -384,11 +543,21 @@ class SkateLink:
         n = 0
         while True:
             try:
-                data, _addr = self._sock.recvfrom(BUFFER_SIZE)
+                data, addr = self._sock.recvfrom(BUFFER_SIZE)
             except BlockingIOError:
                 break
             except OSError:
                 break
+            if self.auth is not None:
+                data = self.auth.unwrap(data, addr)
+                if data is None:
+                    self.auth_errors += 1
+                    continue
+            elif is_tagged(data):
+                # The far end authenticates and we hold no key -- a specific,
+                # fixable condition, not the generic "that didn't decode".
+                self.auth_errors += 1
+                continue
             blob = self._reasm.feed(data)
             if blob is None:
                 continue                     # partial fragment — wait for the rest
@@ -407,9 +576,7 @@ class SkateLink:
         if self.addr is None and not self.resolve():
             return False
         data = pack_command(targ_pos, vel_cmd, height_cmd, deadman)
-        try:
-            self._sock.sendto(data, self.addr)
-        except OSError:
+        if not self._out(data):
             return False
         self._last_heartbeat = time.monotonic()  # a command is also a heartbeat
         return True

@@ -103,6 +103,85 @@ def test_observer_sees_commanders_motion():
     ep.close()
 
 
+def test_unkeyed_peer_gets_nothing_and_commands_nothing():
+    """With $SKATE_AUTH set on both ends, a client without the key is not a
+    peer at all: it receives no telemetry and cannot drive the arms.
+
+    The red-check is built in -- the keyed client runs the SAME motion at the
+    end, so a no-op authentication (one that accepted everyone) would let the
+    unkeyed client move the elbow and fail the first half, while an
+    over-zealous one that rejected everyone would fail the second.
+    """
+    try:
+        import mujoco  # noqa: F401
+    except ImportError:
+        pytest.skip("mujoco not installed")
+    model = _find_model()
+    if model is None:
+        pytest.skip("no control model (set $SKT_DIR or $SKATE_MJCF)")
+
+    from skate_ros2.sim_endpoint import SkateSimEndpoint
+
+    key = b"a-shared-secret-for-this-test-only"
+    port = _free_port()
+    ep = SkateSimEndpoint(model, port=port, telemetry_hz=50.0,
+                          bind="127.0.0.1", realtime=True, verbose=False,
+                          key=key)
+    th = threading.Thread(target=ep.run, kwargs={"duration": 14.0}, daemon=True)
+    th.start()
+
+    good = SkateLink("127.0.0.1", port, key=key)
+    bad = SkateLink("127.0.0.1", port)          # same wire, no key
+
+    # Wait for state_est specifically: it is the one telemetry object big enough
+    # to be FRAGMENTED, so this also proves signed fragments reassemble over
+    # real UDP, not just in the unit test's memory.
+    deadline = time.monotonic() + 4.0
+    while good.state.dof_pos() is None and time.monotonic() < deadline:
+        good.poll()
+        bad.poll()
+        time.sleep(0.02)
+    assert good.connected, "keyed client got no telemetry"
+    assert good.state.dof_pos() is not None, "signed fragments never reassembled"
+    assert good.auth_errors == 0, "keyed client rejected its own endpoint"
+
+    start = np.array(good.state.dof_pos())
+
+    # the UNKEYED client tries to drive the elbow for 2 s
+    targ = start.copy()
+    targ[11] = 1.2
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < 2.0:
+        bad.send_command(targ, deadman=(1, 1, 1))
+        bad.poll()
+        good.poll()
+        time.sleep(1.0 / 60.0)
+
+    assert bad.state.n_packets == 0, "unkeyed client received telemetry"
+    assert ep.dampened, "unkeyed client took the robot out of dampen"
+    assert ep.n_cmds == 0, "unkeyed command was accepted"
+    assert ep.auth_errors > 0, "endpoint never counted the refusals"
+    assert [a[1] for a in ep.peers] == [good._sock.getsockname()[1]], \
+        "an unauthenticated sender was registered as a peer"
+    now = np.array(good.state.dof_pos())
+    assert abs(now[11] - start[11]) < 0.05, "the arm moved for an unkeyed client"
+
+    # ...and the SAME motion from the keyed client does work
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < 3.0:
+        t = time.monotonic() - t0
+        s = min(t / 1.5, 1.0)
+        s = s * s * (3 - 2 * s)
+        targ[11] = (1 - s) * start[11] + s * 1.2
+        good.send_command(targ, deadman=(1, 1, 1))
+        good.poll()
+        time.sleep(1.0 / 60.0)
+    assert abs(good.state.dof_pos()[11] - 1.2) < 0.05, "keyed client blocked too"
+
+    good.close()
+    bad.close()
+    th.join(timeout=16)
+    ep.close()
 
 
 

@@ -34,11 +34,19 @@ Honest approximations (documented, not hidden):
   MuJoCo's soft constraints park a joint a few 1e-7 rad outside its range at
   a limit stop, which strict consumers (MoveIt's start-state bounds check)
   refuse; larger violations pass through unmodified.
+
+Anyone who can reach this port can command motion, so unlike the firmware this
+endpoint refuses to be careless about where it listens: it binds ``127.0.0.1``
+by default, and serving any other address requires ``$SKATE_AUTH`` (the same
+secret on the client — see :class:`skate_ros2.protocol.WireAuth`). The dangerous
+configuration is the one you have to ask for.
 """
 
 from __future__ import annotations
 
 import argparse
+import ipaddress
+import os
 import pickle
 import socket
 import time
@@ -47,8 +55,9 @@ import numpy as np
 
 from . import names
 from . import shared_classes_def as SCD
-from .protocol import (BUFFER_SIZE, COMMAND_ID, DEFAULT_PORT, STALE_AFTER,
-                       WRENCH_ID, pack_datagrams, unpack_packet)
+from .protocol import (AUTH_ENV, BUFFER_SIZE, COMMAND_ID, DEFAULT_PORT,
+                       STALE_AFTER, WRENCH_ID, WireAuth, auth_key,
+                       pack_datagrams, unpack_packet)
 
 PEER_TTL = 3.0   # s; a client silent this long stops receiving telemetry
 
@@ -57,9 +66,41 @@ PEER_TTL = 3.0   # s; a client silent this long stops receiving telemetry
 WRIST_SITES = {"left": "ee_left", "right": "ee_right"}
 
 
+def is_loopback(bind):
+    """True if binding ``bind`` only exposes the port to this machine."""
+    if bind == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(bind).is_loopback
+    except ValueError:
+        return False
+
+
+def require_auth(bind, key=None):
+    """The :class:`WireAuth` for this bind address, or None if none is needed.
+
+    Loopback needs no key: nothing off-box can reach the port anyway. Any other
+    address serves motion commands to the network, so a key is mandatory --
+    raising here rather than quietly opening the port is the whole point.
+    """
+    k = auth_key(key)
+    if k is None and not is_loopback(bind):
+        raise RuntimeError(
+            f"refusing to serve motion commands on {bind!r} without a key: "
+            f"anyone who can reach this port could drive the arms. Set "
+            f"${AUTH_ENV} to the same secret on BOTH ends, or bind 127.0.0.1. "
+            f"(A real Skate has no authentication -- against real firmware "
+            f"leave ${AUTH_ENV} unset and keep the link on a trusted LAN.)")
+    return WireAuth(k) if k else None
+
+
 class SkateSimEndpoint:
     def __init__(self, model_path, port=DEFAULT_PORT, telemetry_hz=50.0,
-                 bind="0.0.0.0", realtime=True, verbose=True):
+                 bind="127.0.0.1", realtime=True, verbose=True, key=None):
+        # FIRST, before the model is even read: a misconfigured endpoint must
+        # fail on the security question, not minutes later on a MuJoCo error.
+        self.auth = require_auth(bind, key)
+        self.bind = bind
         import mujoco  # local import: protocol users shouldn't need mujoco
         self._mujoco = mujoco
         self.m = mujoco.MjModel.from_xml_path(str(model_path))
@@ -97,6 +138,7 @@ class SkateSimEndpoint:
         self.n_cmds = 0
         self.n_telemetry = 0
         self.decode_errors = 0
+        self.auth_errors = 0          # datagrams refused by the keyed envelope
         self._frag_id = 0             # rolling id for large-telemetry fragments
         self._stop = False
 
@@ -131,6 +173,15 @@ class SkateSimEndpoint:
             except (BlockingIOError, OSError):
                 break
             n += 1
+            if self.auth is not None:
+                # Verify BEFORE the sender is registered. Otherwise an unsigned
+                # datagram would still subscribe its sender to the full
+                # telemetry stream and hijack self.client -- authentication that
+                # only guards the command path is not authentication.
+                data = self.auth.unwrap(data, addr)
+                if data is None:
+                    self.auth_errors += 1
+                    continue
             now = time.monotonic()
             self.client = addr
             self.peers[addr] = now
@@ -208,6 +259,10 @@ class SkateSimEndpoint:
         if not peers:
             return
         dgs = pack_datagrams(pkt_id, obj, self._frag_id)
+        if self.auth is not None:
+            # Sign each fragment separately, so every datagram verifies on its
+            # own and a forged one never reaches the reassembler.
+            dgs = [self.auth.wrap(dg) for dg in dgs]
         self._frag_id = (self._frag_id + 1) & 0xFFFFFFFF
         sent = False
         for addr in peers:
@@ -304,8 +359,9 @@ class SkateSimEndpoint:
         next_telemetry = 0.0
         next_log = 0.0
         if self.verbose:
-            print(f"[sim_endpoint] skt_v3 twin on UDP :{self.port} "
-                  f"(telemetry {1/self.telemetry_period:.0f} Hz, "
+            print(f"[sim_endpoint] skt_v3 twin on UDP {self.bind}:{self.port} "
+                  f"({'authenticated' if self.auth else 'open'}, "
+                  f"telemetry {1/self.telemetry_period:.0f} Hz, "
                   f"{'realtime' if self.realtime else 'fast'} physics)")
         while not self._stop:
             sim_t = self.d.time
@@ -327,10 +383,11 @@ class SkateSimEndpoint:
                 next_telemetry = clock + self.telemetry_period
             if self.verbose and clock >= next_log:
                 state = "DAMPENED" if self.dampened else "active"
+                rej = f" rejected={self.auth_errors}" if self.auth_errors else ""
                 print(f"[sim_endpoint] t={sim_t:7.2f}s "
                       f"peers={len(self._live_peers())} "
-                      f"cmds={self.n_cmds} telemetry={self.n_telemetry} "
-                      f"[{state}]")
+                      f"cmds={self.n_cmds} telemetry={self.n_telemetry}"
+                      f"{rej} [{state}]")
                 next_log = clock + 2.0
 
     def close(self):
@@ -340,14 +397,19 @@ class SkateSimEndpoint:
         self.sock.close()
 
 
-def main(argv=None):
-    import os
+def _build_parser():
     ap = argparse.ArgumentParser(
         description="Skate UDP endpoint backed by the MuJoCo skt_v3 twin")
     ap.add_argument("--model", default=os.environ.get("SKATE_MJCF"),
                     help="path to skt_v3_control.xml (or set $SKATE_MJCF); "
                          "generate it with skatearm/sim/make_control_model.py")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
+    # Note there is deliberately NO --key flag: argv is world-readable in `ps`,
+    # so the secret comes from the environment only.
+    ap.add_argument("--bind", default="127.0.0.1",
+                    help="address to listen on (default 127.0.0.1 -- this "
+                         f"machine only). Any other address requires ${AUTH_ENV} "
+                         "set to the same secret on both ends.")
     ap.add_argument("--rate", type=float, default=50.0,
                     help="telemetry rate, Hz (default 50)")
     ap.add_argument("--duration", type=float, default=None,
@@ -355,13 +417,22 @@ def main(argv=None):
     ap.add_argument("--fast", action="store_true",
                     help="run physics as fast as possible (testing)")
     ap.add_argument("--quiet", action="store_true")
+    return ap
+
+
+def main(argv=None):
+    ap = _build_parser()
     args = ap.parse_args(argv)
     if not args.model:
         ap.error("--model is required (or set $SKATE_MJCF). Generate the "
                  "control-ready MJCF with skatearm/sim/make_control_model.py "
                  "over your Rbotic/skate_teleop clone.")
-    ep = SkateSimEndpoint(args.model, port=args.port, telemetry_hz=args.rate,
-                          realtime=not args.fast, verbose=not args.quiet)
+    try:
+        ep = SkateSimEndpoint(args.model, port=args.port, telemetry_hz=args.rate,
+                              bind=args.bind, realtime=not args.fast,
+                              verbose=not args.quiet)
+    except RuntimeError as e:
+        raise SystemExit(f"[sim_endpoint] {e}")
     try:
         ep.run(duration=args.duration)
     except KeyboardInterrupt:

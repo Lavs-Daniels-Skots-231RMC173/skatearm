@@ -17,11 +17,12 @@ jobs:
           python-version: "3.11"
       - name: Install test deps
         run: pip install numpy pytest
-      - name: Wire protocol, wire + sandbox security, joint map, driver safety, NL parser, ros2_control URDF
+      - name: Wire protocol, wire + sandbox security, transport auth, joint map, driver safety, NL parser, ros2_control URDF
         run: >
           pytest -q
           tools/skate_ros2/test/test_protocol_loopback.py
           tools/skate_ros2/test/test_wire_safe.py
+          tools/skate_ros2/test/test_wire_auth.py
           tools/skate_commander/test/test_sandbox.py
           tools/skate_ros2/test/test_names.py
           tools/skate_ros2/test/test_driver_logic.py
