@@ -45,6 +45,7 @@
       <div class="chip" id="chip-rec" style="display:none" title="Teach-in recording">REC</div>
       <div class="chip" id="chip-home" style="display:none" title="Homing - gliding to the safe default pose; ROUTING when routing around a self-collision">HOMING</div>
       <div class="chip" id="chip-contact" style="display:none" title="Contact reflex tripped - click to reset">CONTACT</div>
+      <div class="chip" id="chip-comply" style="display:none" title="Compliant contact response - the arm yields its TCP instead of latching a stop, and returns when released. Click to go back to Stop.">COMPLY</div>
     </div>
     <button id="btn-keys" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (press ?)">?</button>
     <button id="btn-estop">E-STOP</button>
@@ -117,6 +118,7 @@
           <div class="tune-ctl"><div class="tune-lab"><span>Glide speed</span><span class="tv"><em id="tn-sr-v">0.60</em><i>rad/s</i></span></div><input type="range" id="tn-sr" min="10" max="150" step="5" value="60" aria-label="Glide cruise speed rad/s"></div>
           <div class="tune-ctl"><div class="tune-lab"><span>Glide accel</span><span class="tv"><em id="tn-sa-v">2.0</em><i>rad/s&sup2;</i></span></div><input type="range" id="tn-sa" min="5" max="80" step="5" value="20" aria-label="Glide accel rad per s squared"></div>
           <div class="tune-ctl"><div class="tune-lab"><span>Contact sens.</span><span class="tv"><em id="tn-ct-v">8.0</em><i>N&middot;m</i></span></div><input type="range" id="tn-ct" min="20" max="250" step="5" value="80" aria-label="Contact reflex threshold Nm — lower is touchier"></div>
+          <div class="tune-ctl"><div class="tune-lab"><span>On contact</span><span class="tv"><em id="tn-cm-v">stop</em></span></div><div id="tn-cm" class="tn-seg" role="group" aria-label="Contact response"><button type="button" data-cm="stop" class="on" title="Latch a soft-stop on contact - the default">Stop</button><button type="button" data-cm="compliant" title="Yield the TCP along the M3 Cartesian admittance and return when released - no stop is latched">Comply</button></div></div>
           <button id="tn-reset" class="tn-reset">Reset defaults</button>
         </div>
         <div id="transport" title="Sim transport — Play / Pause / Stop / Step / Reset">

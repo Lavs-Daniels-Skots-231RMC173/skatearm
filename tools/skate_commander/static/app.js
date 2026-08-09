@@ -1153,6 +1153,14 @@ function updateTop() {
       ? `CONTACT · J${state.contact.joint}` : "CONTACT";
     cc.className = "chip bad";
   }
+  const cmc = $("chip-comply");
+  if (cmc) {
+    // a mode that SUSPENDS the soft-stop latch has to be visible while it is
+    // engaged — otherwise the only cue is a stop that never comes.
+    const comply = !!(state.contact && state.contact.mode === "compliant");
+    cmc.style.display = comply ? "" : "none";
+    cmc.className = "chip warn";
+  }
   const tmax = state.temps ? Math.max(...state.temps) : 0;
   const tEl = $("chip-temp");
   tEl.textContent = `T ${tmax.toFixed(0)}°C`;
@@ -1281,6 +1289,8 @@ document.addEventListener("keydown", (e) => {     // Escape cancels a pending mo
 });
 if ($("chip-contact"))
   $("chip-contact").onclick = () => send({ type: "reset_contact" });
+if ($("chip-comply"))
+  $("chip-comply").onclick = () => send({ type: "contact_mode", mode: "stop" });
 $("btn-mirror").onclick = () =>
   send({ type: "mirror", on: !(state && state.mirror) });
 if ($("btn-carry")) {
@@ -3438,8 +3448,30 @@ if ($("cam-obj")) $("cam-obj").onchange = () => { if (graspOn) drawGraspObjs(); 
       send({ type: "tune", params: { [m.key]: v } });        // bridge clamps + applies live
     };
   }
+  // Contact RESPONSE — a mode, not a number, so it sits below the sensitivity
+  // slider rather than on it: "stop" latches the soft-stop (default), "comply"
+  // yields the TCP along the M3 admittance and returns when released.
+  const seg = $("tn-cm");
+  let cmShown = null;
+  function paintMode(mode) {
+    if (!seg || mode === cmShown) return;
+    cmShown = mode;
+    seg.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.cm === mode));
+    const em = $("tn-cm-v");
+    if (em) em.textContent = mode === "compliant" ? "comply" : "stop";
+  }
+  function setMode(mode) { paintMode(mode); send({ type: "contact_mode", mode }); }
+  if (seg) {
+    seg.querySelectorAll("button").forEach(b => { b.onclick = () => setMode(b.dataset.cm); });
+    (window.__snapHooks = window.__snapHooks || []).push(
+      (s) => { if (s && s.contact && s.contact.mode) paintMode(s.contact.mode); });
+  }
   const rst = $("tn-reset");
-  if (rst) rst.onclick = () => { for (const id in MAP) setRow(id, DEF[MAP[id].key]); send({ type: "tune", params: DEF }); };
+  if (rst) rst.onclick = () => {
+    for (const id in MAP) setRow(id, DEF[MAP[id].key]);
+    send({ type: "tune", params: DEF });
+    setMode("stop");                       // the default RESPONSE is a default too
+  };
   btn.onclick = (e) => {
     e.stopPropagation();
     const show = pop.style.display === "none" || !pop.style.display;

@@ -964,7 +964,11 @@ body.offline #menubar .chip { opacity: .35; filter: grayscale(1); }
 
 
 /* Motion-tuning popover (reuses .vset-pop / .vset-row) */
-#tune-pop { min-width: 230px; }
+/* the popover grows a row at a time -- cap it to the viewport so the last
+   control (Reset) can never end up below the fold on a short window */
+#tune-pop { min-width: 230px; max-height: calc(100% - 96px); overflow-y: auto; }
+#tune-pop::-webkit-scrollbar { width: 8px; }
+#tune-pop::-webkit-scrollbar-thumb { background: var(--raise); border-radius: 4px; }
 #tune-pop .vset-hd { margin-bottom: 4px; }
 #tune-pop .tune-ctl { padding: 8px 0; }
 #tune-pop .tune-ctl + .tune-ctl { border-top: 1px solid var(--line); }
@@ -974,6 +978,10 @@ body.offline #menubar .chip { opacity: .35; filter: grayscale(1); }
 #tune-pop .tv em { font: 600 12px var(--mono); font-style: normal; color: var(--fg); font-variant-numeric: tabular-nums; }
 #tune-pop .tv i { font: 500 9px var(--sans); font-style: normal; color: var(--fg2); margin-left: 4px; }
 #tune-pop input[type="range"] { width: 100%; display: block; margin: 0; }
+#tune-pop .tn-seg { display: flex; gap: 5px; }
+#tune-pop .tn-seg button { flex: 1; padding: 6px 0; font: 600 10px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--fg2); background: var(--panel2); border: 1px solid var(--line); border-radius: 5px; cursor: pointer; transition: border-color .12s, color .12s, background .12s; }
+#tune-pop .tn-seg button:hover { color: var(--fg); border-color: var(--accent); }
+#tune-pop .tn-seg button.on { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
 .tn-reset { margin-top: 13px; width: 100%; padding: 7px 0; font: 600 10px var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--fg2); background: var(--panel2); border: 1px solid var(--line); border-radius: 5px; cursor: pointer; transition: border-color .12s, color .12s, background .12s; }
 .tn-reset:hover { color: var(--fg); border-color: var(--accent); background: var(--panel3); }
 

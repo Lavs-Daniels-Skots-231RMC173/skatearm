@@ -954,6 +954,11 @@ def handle_command(bridge: RobotBridge, cmd: dict, runner=None, tools=None,
         bridge.home()
     elif t == "reset_contact":
         bridge.clear_contact()
+    elif t == "contact_mode":
+        # the contact RESPONSE, not its sensitivity: "stop" latches the soft
+        # stop (default), "compliant" yields the TCP instead. The bridge is the
+        # validator -- anything else leaves the mode in effect untouched.
+        bridge.set_contact_mode(cmd.get("mode"))
     elif t == "set_mode":
         bridge.set_mode(cmd["mode"])
     elif t == "observe":
