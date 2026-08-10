@@ -97,48 +97,80 @@ def _load_tools():
     return tools
 
 
-def _obstacle_hit(c, rr, o):
-    """True if a robot geom (approximated as a sphere: centre c, bounding
-    radius rr) overlaps the axis-aligned virtual obstacle o
-    ({type:'box'|'cyl', p:[x,y,z], s:[...]})."""
+def _obb_hit(c, M, half, o):
+    """True if a robot link — taken as the ORIENTED BOX ``(c, M, half)`` — overlaps
+    the axis-aligned virtual obstacle ``o`` ({type:'box'|'cyl', p:[x,y,z], s:[...]}).
+
+    ``M`` is the link's world rotation as MuJoCo's flat row-major 9-vector; its
+    COLUMNS are the box axes. The test is **exact**, by the separating-axis
+    theorem: two convex boxes are disjoint iff one of fifteen axes separates
+    them — the three world axes, the three link axes, and their nine cross
+    products. Nothing is sampled and nothing is wrapped in a ball, so a link
+    reserves its own volume and not a sphere around it.
+
+    A vertical cylinder is tested against its own enclosing box: that can only
+    over-block, never under-block, and it is still far tighter than a bounding
+    ball. (The cockpit only ever spawns boxes; ``cyl`` arrives through the API.)
+    """
     import math
     p, s = o.get("p"), o.get("s")
     if not p or not s:
         return False
-    if o.get("type") == "cyl":                     # vertical cylinder: s=[radius, half-height]
-        dxy = max(math.hypot(c[0] - p[0], c[1] - p[1]) - float(s[0]), 0.0)
-        dz = max(abs(c[2] - p[2]) - float(s[1]), 0.0)
-        return dxy * dxy + dz * dz < rr * rr
-    dx = max(abs(c[0] - p[0]) - float(s[0]), 0.0)   # box: s=[hx, hy, hz] half-extents
-    dy = max(abs(c[1] - p[1]) - float(s[1]), 0.0)
-    dz = max(abs(c[2] - p[2]) - float(s[2]), 0.0)
-    return dx * dx + dy * dy + dz * dz < rr * rr
+    if o.get("type") == "cyl":                      # s = [radius, half-height]
+        if len(s) < 2:
+            return False
+        eb = (float(s[0]), float(s[0]), float(s[1]))
+    else:                                           # s = [hx, hy, hz]
+        if len(s) < 3:
+            return False
+        eb = (float(s[0]), float(s[1]), float(s[2]))
+    ea = (float(half[0]), float(half[1]), float(half[2]))
+    d = (c[0] - float(p[0]), c[1] - float(p[1]), c[2] - float(p[2]))
 
+    # broad phase: the link's circumscribed sphere against the obstacle box.
+    # Cheap, and it is the branch almost every (link, obstacle) pair takes.
+    rr = math.sqrt(ea[0] * ea[0] + ea[1] * ea[1] + ea[2] * ea[2])
+    gx = max(abs(d[0]) - eb[0], 0.0)
+    gy = max(abs(d[1]) - eb[1], 0.0)
+    gz = max(abs(d[2]) - eb[2], 0.0)
+    if gx * gx + gy * gy + gz * gz >= rr * rr:
+        return False
 
-def _capsule_hit(center, axis, radius, half_len, o):
-    """True if a capsule overlaps the virtual obstacle ``o``.
+    # R[i][j] = (link axis i) . (world axis j) — the transpose of M
+    R = [[M[0], M[3], M[6]],
+         [M[1], M[4], M[7]],
+         [M[2], M[5], M[8]]]
+    # the epsilon keeps a link axis that is exactly parallel to a world axis
+    # from producing a zero-length cross product and a false separation
+    A = [[abs(R[i][j]) + 1e-9 for j in range(3)] for i in range(3)]
+    t = [R[i][0] * d[0] + R[i][1] * d[1] + R[i][2] * d[2] for i in range(3)]
 
-    The capsule is the segment ``center ± half_len*axis`` swept by ``radius``.
-    The axis is sampled at a spacing <= ``radius`` and each sample is tested as
-    a sphere of radius ``radius * 1.12`` — the union of those spheres provably
-    covers the whole capsule (so this never under-blocks), yet it sheds the huge
-    phantom volume an enclosing sphere (radius + half_len) claims against a
-    keep-out box: a long forearm no longer reserves a ~30 cm ball around itself.
-    """
-    n = max(1, int(2.0 * half_len / max(radius, 1e-3)) + 1)
-    rr = radius * 1.12
-    for k in range(n + 1):
-        f = -half_len + (2.0 * half_len) * (k / n)
-        pt = (center[0] + f * axis[0],
-              center[1] + f * axis[1],
-              center[2] + f * axis[2])
-        if _obstacle_hit(pt, rr, o):
-            return True
-    return False
+    for i in range(3):                              # the link's own axes
+        if abs(t[i]) > ea[i] + eb[0] * A[i][0] + eb[1] * A[i][1] + eb[2] * A[i][2]:
+            return False
+    for j in range(3):                              # the world axes
+        if abs(d[j]) > eb[j] + ea[0] * A[0][j] + ea[1] * A[1][j] + ea[2] * A[2][j]:
+            return False
+    for i in range(3):                              # the nine cross products
+        i1, i2 = (i + 1) % 3, (i + 2) % 3
+        for j in range(3):
+            j1, j2 = (j + 1) % 3, (j + 2) % 3
+            ra = ea[i1] * A[i2][j] + ea[i2] * A[i1][j]
+            rb = eb[j1] * A[i][j2] + eb[j2] * A[i][j1]
+            if abs(t[i2] * R[i1][j] - t[i1] * R[i2][j]) > ra + rb:
+                return False
+    return True
 
 
 def make_collision_guard(collision_xml, get_obstacles=None):
-    """Self-collision predicate over the SkateArm box-collision model.
+    """Self-collision predicate over the SkateArm primitive-collision model.
+
+    ``make_collision_model.py`` fits one capsule (or a sphere, where the link is
+    near-isotropic) to each link's compiled AABB — 22 capsules and 5 spheres on
+    skt_v3, and no boxes since that rework; ``--boxes`` keeps the old v0.4 shape
+    for comparison. Self-collision is therefore MuJoCo-exact on those primitives.
+    The *keep-out* half of the guard reasons over a different volume on purpose —
+    see ``keepout`` below.
 
     The physics collision model excludes pairs that touch at the neutral pose
     (hanging hands sit right next to the hips!) so the robot doesn't jam in
@@ -208,28 +240,36 @@ def make_collision_guard(collision_xml, get_obstacles=None):
         if get_obstacles is not None:                      # virtual user obstacles
             obs = get_obstacles()
             if obs:
-                for gi in geom_ids:
-                    cx = gd.geom_xpos[gi]
-                    if int(gm.geom_type[gi]) == 3:         # capsule: test its axis segment
-                        ax = gd.geom_xmat[gi].reshape(3, 3)[:, 2]
-                        r = float(gm.geom_size[gi][0])
-                        hl = float(gm.geom_size[gi][1])
-                        if any(_capsule_hit(cx, ax, r, hl, o) for o in obs):
-                            return True
-                    else:                                  # compact geom: enclosing sphere
-                        if any(_obstacle_hit(cx, geom_r[gi], o) for o in obs):
-                            return True
+                for gi, ctr, half in keepout:
+                    M, px = gd.geom_xmat[gi], gd.geom_xpos[gi]
+                    c = (px[0] + M[0] * ctr[0] + M[1] * ctr[1] + M[2] * ctr[2],
+                         px[1] + M[3] * ctr[0] + M[4] * ctr[1] + M[5] * ctr[2],
+                         px[2] + M[6] * ctr[0] + M[7] * ctr[1] + M[8] * ctr[2])
+                    if any(_obb_hit(c, M, half, o) for o in obs):
+                        return True
         return False
 
     geom_ids = [i for i in range(gm.ngeom) if int(gm.geom_bodyid[i]) != 0]
-    import math as _math
-    def _bound_r(t, sz):                                   # conservative bounding-sphere radius
-        if t == 6: return _math.sqrt(float(sz[0]) ** 2 + float(sz[1]) ** 2 + float(sz[2]) ** 2)
-        if t == 3: return float(sz[0]) + float(sz[1])      # capsule: radius + half-length
-        if t == 5: return _math.hypot(float(sz[0]), float(sz[1]))
-        if t == 2: return float(sz[0])
-        return float(max(sz))
-    geom_r = {i: _bound_r(int(gm.geom_type[i]), gm.geom_size[i]) for i in geom_ids}
+
+    # Keep-out volumes: ONE oriented box per link — the geom's **compiled AABB**,
+    # which is MuJoCo's own bound on that mesh. Two things follow, and the old
+    # per-geom bounding sphere had neither. It provably covers the link, so the
+    # test cannot be blind to a link entering a keep-out box; and it is the link
+    # and nothing more, so the planner stops detouring around phantom volume.
+    # The visual mesh carries the real link shape (the collision primitives are
+    # deliberately SHRUNK so the robot does not jam against itself in sim, which
+    # is the right volume for self-collision and the wrong one for a keep-out);
+    # a body without a mesh falls back to its primitives.
+    _by_body = {}
+    for i in geom_ids:
+        _by_body.setdefault(int(gm.geom_bodyid[i]), []).append(i)
+    keepout = []
+    for _b, _gids in _by_body.items():
+        _meshes = [i for i in _gids if int(gm.geom_type[i]) == 7]
+        for i in (_meshes or _gids):
+            ab = gm.geom_aabb[i]
+            keepout.append((i, (float(ab[0]), float(ab[1]), float(ab[2])),
+                            (float(ab[3]), float(ab[4]), float(ab[5]))))
 
     def collision_view(q):
         """World-space poses of the guard model's geoms at pose ``q`` (26-vec).

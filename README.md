@@ -33,7 +33,7 @@ Prefer to watch or read? **[product film](https://dsl-robotics.github.io/skatear
   <img src="docs/img/cell_cycle_demo.gif" width="420px" alt="Autonomous GRAFCET assembly cycle with camera QC and HMI overlay">
   <img src="docs/img/commander_teachin.gif" width="420px" alt="Skate Commander teach-in: moving the arms by hand writes rbt program lines that the cockpit can replay">
   <br>
-  <em>Left: <strong>Phase 1 complete</strong> — the autonomous bimanual assembly cycle (GRAFCET sequencer, camera QC).
+  <em>Left: <strong>Phase 1 complete</strong> — the autonomous bimanual assembly cycle (a <strong>GRAFCET</strong> sequencer — the IEC&nbsp;60848 step/transition chart industrial cells are written in, here steps S0–S7 — plus camera QC).
   Right: <strong>Skate Commander</strong> — mirror-mode bimanual jog, then teach-in: move the arms by hand and the cockpit writes the <code>rbt</code> program itself.</em>
 </div>
 
@@ -123,7 +123,9 @@ Skate Commander integrates best-in-class open-source robotics tools — each **o
 <a id="act-pipeline"></a>
 ## Deep-dive · From cockpit to policy — an ACT visuomotor imitation-learning pipeline
 
-> The LeRobot integration taken end-to-end: a **scripted DLS-IK expert** produces bimanual-reach
+> The LeRobot integration taken end-to-end: a **scripted DLS-IK expert** (damped least squares —
+> the inverse-kinematics solver that stays well behaved near a singularity by trading a little
+> accuracy for a bounded joint speed) produces bimanual-reach
 > demos, exported as a **LeRobotDataset v3.0**; an **ACT** policy is then **behaviour-cloned** from
 > them on a single 4 GB laptop GPU and rolled out **closed-loop** in the same MuJoCo twin. At
 > inference it sees only pixels + joint angles — never the target coordinates — so it reaches
